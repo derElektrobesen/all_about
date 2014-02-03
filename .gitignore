@@ -1,0 +1,9 @@
+frontend/js/lib/*
+*~
+*.swp
+.*.swp
+.*~
+bootstrap*
+backbone*
+underscore*
+glyphicons*

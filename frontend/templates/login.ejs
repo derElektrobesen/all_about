@@ -1,0 +1,19 @@
+<script type='text/template' id='src-login_form'>
+    <form class="form-inline" role="form">
+        <div class="form-group has-feedback" id="login-login_container">
+            <label class="sr-only" for="login-login">Login</label>
+            <input type="text" class="form-control" id="login-login" placeholder="Enter login">
+        </div>
+        <div class="form-group has-feedback" id="login-passw_container">
+            <label class="sr-only" for="login-passw">Password</label>
+            <input type="password" class="form-control" id="login-passw" placeholder="Enter password">
+        </div>
+        <div class="checkbox">
+            <label><input type="checkbox" id="login-do_remember">&nbsp;Remember me</label>
+        </div>
+        <button type="submit" class="btn btn-default">Sign in</button>
+        <div class="alert alert-warning hide" id="login-error_message">
+            <strong>Error!</strong> Incorrect login or password given.
+        </div>
+    </form>
+</script>
