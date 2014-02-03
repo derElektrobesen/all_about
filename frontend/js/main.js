@@ -67,18 +67,35 @@
                 this.$el.html(this.template({}));
             },
 
-            apply: function (form_ref) {
+            apply: function (form_ref, e) {
                 var $form = $(form_ref),
+                    $passw = $form.find("#login-passw"),
                     login = $form.find("#login-login").val(),
-                    passw = $form.find("#login-passw").val(),
+                    passw = $passw.val(),
                     remember = $form.find("#login-do_remember").prop("checked"),
                     class_name = "has-error",
                     $err = $form.find("#login-error_message");
-                if (!login || !password)
+                if (!login || !password) {
                     $err.removeClass("hide");
-                else
+                    $passw.val('');
+                } else {
                     $err.addClass("hide");
-                return false;
+                    $.ajax({
+                        url:        '/cgi-bin/login.cgi',
+                        method:     'POST',
+                        dataType:   'json',
+                        data:       {
+                            login:      login,
+                            passw:      passw,
+                            remember:   remember,
+                        },
+                        success:    function (data) {
+                            console.log(data);
+                        },
+                    });
+                }
+                e[0].preventDefault();
+                return true;
             },
 
             show: function () {
