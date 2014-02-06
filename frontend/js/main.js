@@ -47,16 +47,22 @@
 
             apply: function (form_ref, e) {
                 var $form = $(form_ref),
-                    $passw = $form.find("#login-passw"),
-                    login = $form.find("#login-login").val(),
+                    $passw = $form.find("#edt_passw"),
+                    $login = $form.find("#edt_login"),
+                    login = $login.val(),
                     passw = $passw.val(),
-                    remember = $form.find("#login-do_remember").prop("checked"),
+                    remember = $form.find("#chb_remember").prop("checked"),
                     class_name = "has-error",
                     $err = $form.find("#login-error_message");
-                if (!login || !password) {
+                if (!login || !passw) {
                     $err.removeClass("hide");
                     $passw.val('');
                 } else {
+                    var callback = function () {
+                            $err.html("<strong>Error!</strong> Internal server error.");
+                            $err.removeClass("hide");
+                        },
+                        self = this;
                     $err.addClass("hide");
                     $.ajax({
                         url:        '/cgi-bin/login.cgi',
@@ -64,11 +70,20 @@
                         dataType:   'json',
                         data:       {
                             login:      login,
-                            passw:      passw,
+                            passw:      passw,      // SSL is needed
                             remember:   remember,
                         },
                         success:    function (data) {
-                            console.log(data);
+                            if (data.ok) {
+                                self.navigate("");
+                            } else {
+                                $err.removeClass("hide");
+                                $passw.focus().val('');
+                            }
+                        },
+                        error:      callback,
+                        statusCode: {
+                            404:    callback,
                         },
                     });
                 }

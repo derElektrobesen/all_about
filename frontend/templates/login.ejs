@@ -1,19 +1,43 @@
 <script type='text/template' id='src-login_form'>
-    <form class="form-inline" role="form">
-        <div class="form-group has-feedback" id="login-login_container">
-            <label class="sr-only" for="login-login">Login</label>
-            <input type="text" class="form-control" id="login-login" placeholder="Enter login">
-        </div>
-        <div class="form-group has-feedback" id="login-passw_container">
-            <label class="sr-only" for="login-passw">Password</label>
-            <input type="password" class="form-control" id="login-passw" placeholder="Enter password">
-        </div>
-        <div class="checkbox">
-            <label><input type="checkbox" id="login-do_remember">&nbsp;Remember me</label>
-        </div>
-        <button type="submit" class="btn btn-default">Sign in</button>
-        <div class="alert alert-warning hide" id="login-error_message">
-            <strong>Error!</strong> Incorrect login or password given.
-        </div>
-    </form>
+<form class="form-horizontal">
+<fieldset>
+
+<!-- Form Name -->
+<legend>Login</legend>
+
+<div class="alert alert-warning hide" id="login-error_message">
+    <strong>Error!</strong> Incorrect login or password given.
+</div>
+
+<!-- Text input-->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="edt_login">Login</label>
+  <div class="col-md-4">
+  <input id="edt_login" name="edt_login" type="text" placeholder="Input login" class="form-control input-md" required="">
+  </div>
+</div>
+
+<!-- Password input-->
+<div class="form-group">
+  <label class="col-md-4 control-label" for="edt_passw">Password</label>
+  <div class="col-md-4">
+    <input id="edt_passw" name="edt_passw" type="password" placeholder="Input password" class="form-control input-md" required="">
+  </div>
+</div>
+
+<div class="form-group">
+  <div class="col-md-4"></div>
+  <div class="col-md-3">
+    <label class="checkbox-inline" for="chb_remember">
+      <input type="checkbox" name="checkboxes" id="chb_remember" value="">
+      Remember me
+    </label>
+  </div>
+  <div class="col-md-1">
+    <button id="btn_login" name="btn_login" class="btn btn-default pull-right">Sign in</button>
+  </div>
+</div>
+
+</fieldset>
+</form>
 </script>
