@@ -1,16 +1,14 @@
-(function ($, Backbone, _) {
+(function ($, Backbone, _, Template) {
     var Heading = {
-        Model: Backbone.Model.extend({
+        Model: Template.Model.extend({
             defaults: {
                 title:      undefined,
                 content:    undefined,
             },
         }),
 
-        View: Backbone.View.extend({
-            initialize: function (options) {
-                this.template = _.template(options.heading_content.html());
-                this.model.on('change', this.render, this);
+        View: Template.View.extend({
+            init: function () {
                 this.render();
             },
 
@@ -20,46 +18,26 @@
                     content:    this.model.get('content'),
                 }));
             },
-
-            show: function () {
-                this.$el.removeClass("hide");
-            },
-
-            hide: function () {
-                this.$el.addClass("hide");
-            },
         }),
     };
 
     var Content = {
-        Model: Backbone.Model.extend({}),
-        View: Backbone.View.extend({
-            initialize: function (options) {
-                this.template = _.template(options.general_content.html());
-                this.model.on('change', this.render, this);
+        Model: Template.Model.extend({}),
+        View: Template.View.extend({
+            init: function () {
                 this.render();
             },
 
             render: function () {
                 this.$el.html(this.template({}));
             },
-
-            show: function () {
-                this.$el.removeClass("hide");
-            },
-
-            hide: function () {
-                this.$el.addClass("hide");
-            },
         }),
     };
 
     var Login = {
-        Model: Backbone.Model.extend({}),
-        View: Backbone.View.extend({
-            initialize: function (options) {
-                this.template = _.template(options.login_form.html());
-                this.model.on('change', this.render, this);
+        Model: Template.Model.extend({}),
+        View: Template.View.extend({
+            init: function () {
                 this.$el.on('submit', 'form', this.apply, this);
             },
 
@@ -103,10 +81,6 @@
                 this.$el.removeClass("hide");
                 this.$el.find("#login-login").focus();
             },
-
-            hide: function () {
-                this.$el.addClass("hide");
-            },
         }),
     };
 
@@ -122,6 +96,7 @@
         initialize: function (options) {
             this._init_models(options.templates);
             this._init_views(options.templates);
+            this.selectors = {};
         },
 
         _init_models: function (templates) {
@@ -133,18 +108,21 @@
                     }),
                     el:         '.app-heading',
                     view_ref:   Heading.View,
+                    template:   'heading_content',
                 },
 
                 general_content: {
                     model:      new Content.Model({}),
                     el:         '.app-content',
                     view_ref:   Content.View,
+                    template:   'general_content',
                 },
 
                 login_form: {
                     model:      new Login.Model({}),
                     el:         '.app-login_form',
                     view_ref:   Login.View,
+                    template:   'login_form',
                 },
             };
         },
@@ -156,11 +134,12 @@
                 val.view = new val.view_ref(_.extend({
                     el:     val.el,
                     model:  val.model,
-                }, templates));
+                }, templates[val.template]));
             }
         },
 
         login: function () {
+            this._change_current_nav_elem('Login');
             this._hide(['login_form']);
         },
 
@@ -170,6 +149,11 @@
 
         index: function () {
             this._hide(['heading', 'general_content']);
+            this._change_current_nav_elem('Home');
+        },
+
+        about: function () {
+            this._change_current_nav_elem('About');
         },
 
         _hide: function (exceptions) {
@@ -178,6 +162,21 @@
                 var val = this.models[key];
                 val.view[_.indexOf(exceptions, key) >= 0 ? "show" : "hide"]();
             }
+        },
+
+        _change_current_nav_elem: function (new_title) {
+            var $sel = this._get_selector('#main_menu');
+            $sel.children().each(function (index, li) {
+                var cond = li.innerText.trim().toUpperCase() == new_title.trim().toUpperCase();
+                $(li)[cond ? 'addClass' : 'removeClass']('active');
+            });
+        },
+
+        _get_selector: function (sel_name) {
+            if (!this.selectors[sel_name]) {
+                this.selectors[sel_name] = $(sel_name);
+            }
+            return this.selectors[sel_name];
         },
     });
 
@@ -193,4 +192,4 @@
         });
         Backbone.history.start();
     });
-}) ($, Backbone, _);
+}) ($, Backbone, _, window.Template);
