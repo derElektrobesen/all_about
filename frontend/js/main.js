@@ -54,6 +54,7 @@
                     remember = $form.find("#chb_remember").prop("checked"),
                     class_name = "has-error",
                     $err = $form.find("#login-error_message");
+                $err.addClass("hide");
                 if (!login || !passw) {
                     $err.removeClass("hide");
                     $passw.val('');
@@ -61,8 +62,7 @@
                     var callback = function () {
                             $err.html("<strong>Error!</strong> Internal server error.");
                             $err.removeClass("hide");
-                        },
-                        self = this;
+                        };
                     $err.addClass("hide");
                     $.ajax({
                         url:        '/cgi-bin/login.cgi',
@@ -75,9 +75,10 @@
                         },
                         success:    function (data) {
                             if (data.ok) {
-                                self.navigate("");
+                                window.app.navigate("", true);
                             } else {
-                                $err.removeClass("hide");
+                                $err.removeClass("hide")
+                                    .html("<strong>Error!</strong> Incorrect login or password given.");
                                 $passw.focus().val('');
                             }
                         },
@@ -94,7 +95,6 @@
             show: function () {
                 this.render();
                 this.$el.removeClass("hide");
-                this.$el.find("#login-login").focus();
             },
         }),
     };
