@@ -4,6 +4,7 @@
 
 <!-- Form Name -->
 <legend>Registration</legend>
+<div class="alert alert-warning hide" id="register-error_message"></div>
 
 <!-- Text input-->
 <div class="form-group">
@@ -51,7 +52,7 @@
 </div>
 
 <!-- Password input-->
-<div class="form-group">
+<div class="form-group" id="grp_passw">
   <label class="col-md-4 control-label" for="edt_passw">Password *</label>
   <div class="col-md-4">
     <input id="edt_passw" name="edt_passw" type="password" placeholder="Password" class="form-control input-md" required="">
@@ -60,7 +61,7 @@
 </div>
 
 <!-- Password input-->
-<div class="form-group">
+<div class="form-group" id="grp_passw_a">
   <label class="col-md-4 control-label" for="edt_passw_a">Confirm password *</label>
   <div class="col-md-4">
     <input id="edt_passw_a" name="edt_passw_a" type="password" placeholder="Password" class="form-control input-md" required="">

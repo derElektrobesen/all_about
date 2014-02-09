@@ -4,10 +4,19 @@
         Model:  Backbone.Model.extend({}),
 
         View: Backbone.View.extend({
-            initialize: function ($template) {
+            initialize: function ($template, args) {
                 this.template = _.template($template.html());
                 this.model.on('change', this.render, this);
-                this.init();
+                if (this.init)
+                    this.init();
+                if (args) {
+                    if (args.render_on_init)
+                        this.render();
+                }
+            },
+
+            render: function () {
+                this.$el.html(this.template({}));
             },
 
             show: function () {

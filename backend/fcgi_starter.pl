@@ -7,21 +7,28 @@ use CGI;
 use CGI::Fast;
 use FCGI::ProcManager qw(pm_manage pm_pre_dispatch pm_post_dispatch);
 
+use DBI;
+
 use Sys::Syslog;
 use POSIX;
 
 use JSON;
 
 my %params = (
-    sock_path       => '/var/run/all_about.sock',
-    port_used       => 0,
-#    sock_path       => '127.0.0.1:9000',
-    pid_path        => '/var/run/all_about.pid',
-    need_root       => 1,
-    n_processes     => 4,
-    daemonize       => 0,
-    username        => 'nobody',
-    nginx_user      => 'http',
+    sock_path           => '/var/run/all_about.sock',
+    port_used           => 0,
+#    sock_path           => '127.0.0.1:9000',
+    pid_path            => '/var/run/all_about.pid',
+    need_root           => 1,
+    n_processes         => 4,
+    daemonize           => 0,
+    username            => 'nobody',
+    nginx_user          => 'http',
+    sql_user            => 'all_about_user',
+    sql_pass            => 'all_about_password',
+    sql_database_name   => 'all_about',
+    sql_database_host   => 'localhost',
+    sql_database_port   => '3306',
 );
 
 my %content_types = (
@@ -38,18 +45,85 @@ my %actions = (
     '/cgi-bin/register.cgi'     => {
         sub_ref         => \&register,
         content_type    => 'json',
+        required_fields => [qw( username email name passw )],
     },
 );
+
+my %errors = (
+    user_exists         => {
+        err_code    => 1,
+        err_text    => 'Username is already exists',
+    },
+    email_exists        => {
+        err_code    => 2,
+        err_text    => 'Email is already in use',
+    },
+);
+
+my %sql_queries = (
+    last_id             => {
+        t           => 'select last_insert_id()',
+    },
+    add_user            => {
+        t           => 'insert into users(username, password) values (?, MD5(?))',
+    },
+    add_user_info       => {
+        t           => 'insert into users_info(user_id, name, surname, lastname, email) values (?, ?, ?, ?, ?)',
+    },
+);
+
+sub _log {
+    return syslog 'info', shift;
+}
 
 sub login {
     my ($query, $params) = @_;
     print to_json {
         ok => 1,
+        hhh => undef,
     };
 }
 
 sub register {
-    my ($query, $params) = @_;
+    my ($query, $params, $dbh) = @_;
+    my $err_ref;
+
+    $dbh->begin_work;
+    my $sth = prepare_sth('add_user', $dbh);
+    my $count = $sth->execute($params->{username}, $params->{passw});
+    $sth->finish;
+    unless ($count) {
+        $err_ref = $errors{user_exists};
+    } else {
+        $sth = prepare_sth('last_id', $dbh);
+        $sth->execute;
+        my $uid = $sth->fetchrow_arrayref()->[0];
+        $sth->finish;
+
+        $sth = prepare_sth('add_user_info', $dbh);
+        $count = $sth->execute($uid, $params->{name}, $params->{surname} || undef,
+            $params->{lastname} || undef, $params->{email});
+        $err_ref = $errors{email_exists} unless $count;
+        $sth->finish;
+    }
+    print to_json {
+        ok          => defined $err_ref ? 0 : 1,
+        err_code    => defined $err_ref ? $err_ref->{err_code} : 0,
+        err_text    => defined $err_ref ? $err_ref->{err_text} : "Success",
+    };
+    defined $err_ref ? $dbh->rollback : $dbh->commit;
+}
+
+sub prepare_sth {
+    my $name = shift;
+    my $dbh = shift;
+    my $sth_ref = $sql_queries{$name};
+    my $sth = $sth_ref->{q};
+    unless ($sth) {
+        $sth = $dbh->prepare($sth_ref->{t});
+        $sth_ref->{q} = $sth;
+    }
+    return $sth;
 }
 
 sub check_user {
@@ -120,9 +194,14 @@ sub init {
     openlog("all_about", "ndelay,pid", "local0");
     reopen_std if $params{daemonize};
 
+    my $dbh = DBI->connect("DBI:mysql:$params{sql_database_name}:" .
+        "$params{sql_database_host}:$params{sql_database_port}", $params{sql_user}, $params{sql_pass},
+        { RaiseError => 0, PrintError => 0, });
+    die "Can't connect to DB: $!\n" unless $dbh;
+
     while ($request->Accept() >= 0) {
         pm_pre_dispatch();
-        my $query = CGI->new;
+        my $query = uc($ENV{REQUEST_METHOD}) eq 'POST' ? CGI->new(\*STDIN) : CGI->new;
         if (my $ref = $actions{$ENV{SCRIPT_NAME}}) {
             my $params = $query->Vars;
             my $flag = 1;
@@ -135,7 +214,7 @@ sub init {
             }
             if ($flag) {
                 print "Content-Type: $content_types{$ref->{content_type}}\r\n\r\n";
-                $ref->{sub_ref}->($query, $params);
+                $ref->{sub_ref}->($query, $params, $dbh);
             }
         } else {
             print "Status: 404 Not Found\r\n\r\n";

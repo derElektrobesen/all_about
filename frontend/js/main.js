@@ -8,10 +8,6 @@
         }),
 
         View: Template.View.extend({
-            init: function () {
-                this.render();
-            },
-
             render: function () {
                 this.$el.html(this.template({
                     head:       this.model.get('title'),
@@ -23,13 +19,15 @@
 
     var Content = {
         Model: Template.Model.extend({}),
-        View: Template.View.extend({
-            init: function () {
-                this.render();
-            },
+        View: Template.View.extend({}),
+    };
 
-            render: function () {
-                this.$el.html(this.template({}));
+    var Error = {
+        Model: Template.Model.extend({}),
+        View: Template.View.extend({
+            show: function () {
+                this.render();
+                this.$el.removeClass("hide");
             },
         }),
     };
@@ -40,8 +38,8 @@
             'index':            'index',
             'login':            'login',
             'register':         'register',
-            'search/:query':    'search',
-            'about':            'about',
+
+            '*notFound':        'not_found',
         },
 
         initialize: function (options) {
@@ -60,6 +58,9 @@
                     el:         '.app-heading',
                     view_ref:   Heading.View,
                     template:   'heading_content',
+                    args:       {
+                        'render_on_init':   true,
+                    },
                 },
 
                 general_content: {
@@ -67,6 +68,9 @@
                     el:         '.app-content',
                     view_ref:   Content.View,
                     template:   'general_content',
+                    args:       {
+                        'render_on_init':   true,
+                    },
                 },
 
                 login_form: {
@@ -82,6 +86,13 @@
                     view_ref:   Forms.Register.View,
                     template:   'register_form',
                 },
+
+                '404_err': {
+                    model:      new Error.Model({}),
+                    el:         '.app-404_err',
+                    view_ref:   Error.View,
+                    template:   '404_err',
+                },
             };
         },
 
@@ -92,7 +103,7 @@
                 val.view = new val.view_ref(_.extend({
                     el:     val.el,
                     model:  val.model,
-                }, templates[val.template]));
+                }, templates[val.template]), val.args);
             }
         },
 
@@ -106,17 +117,14 @@
             this._hide(['register_form']);
         },
 
-        search: function (query) {
-            // TODO
-        },
-
         index: function () {
-            this._hide(['heading', 'general_content']);
             this._change_current_nav_elem('Home');
+            this._hide(['heading', 'general_content']);
         },
 
-        about: function () {
-            this._change_current_nav_elem('About');
+        not_found: function () {
+            this._change_current_nav_elem('');
+            this._hide(['404_err']);
         },
 
         _hide: function (exceptions) {
@@ -149,6 +157,7 @@
             general_content:    $('#src-general_content'),
             login_form:         $('#src-login_form'),
             register_form:      $('#src-register_form'),
+            '404_err':          $('#src-404_err'),
         };
 
         window.app = new MainRouter({
