@@ -1,4 +1,4 @@
-(function ($, Backbone, _, Template) {
+(function ($, Backbone, _, Template, Forms) {
     var Heading = {
         Model: Template.Model.extend({
             defaults: {
@@ -34,76 +34,12 @@
         }),
     };
 
-    var Login = {
-        Model: Template.Model.extend({}),
-        View: Template.View.extend({
-            init: function () {
-                this.$el.on('submit', 'form', this.apply, this);
-            },
-
-            render: function () {
-                this.$el.html(this.template({}));
-            },
-
-            apply: function (form_ref, e) {
-                var $form = $(form_ref),
-                    $passw = $form.find("#edt_passw"),
-                    $login = $form.find("#edt_login"),
-                    login = $login.val(),
-                    passw = $passw.val(),
-                    remember = $form.find("#chb_remember").prop("checked"),
-                    class_name = "has-error",
-                    $err = $form.find("#login-error_message");
-                $err.addClass("hide");
-                if (!login || !passw) {
-                    $err.removeClass("hide");
-                    $passw.val('');
-                } else {
-                    var callback = function () {
-                            $err.html("<strong>Error!</strong> Internal server error.");
-                            $err.removeClass("hide");
-                        };
-                    $err.addClass("hide");
-                    $.ajax({
-                        url:        '/cgi-bin/login.cgi',
-                        method:     'POST',
-                        dataType:   'json',
-                        data:       {
-                            login:      login,
-                            passw:      passw,      // SSL is needed
-                            remember:   remember,
-                        },
-                        success:    function (data) {
-                            if (data.ok) {
-                                window.app.navigate("", true);
-                            } else {
-                                $err.removeClass("hide")
-                                    .html("<strong>Error!</strong> Incorrect login or password given.");
-                                $passw.focus().val('');
-                            }
-                        },
-                        error:      callback,
-                        statusCode: {
-                            404:    callback,
-                        },
-                    });
-                }
-                e[0].preventDefault();
-                return true;
-            },
-
-            show: function () {
-                this.render();
-                this.$el.removeClass("hide");
-            },
-        }),
-    };
-
     var MainRouter = Backbone.Router.extend({
         routes: {
             '':                 'index',
             'index':            'index',
             'login':            'login',
+            'register':         'register',
             'search/:query':    'search',
             'about':            'about',
         },
@@ -134,10 +70,17 @@
                 },
 
                 login_form: {
-                    model:      new Login.Model({}),
+                    model:      new Forms.Login.Model({}),
                     el:         '.app-login_form',
-                    view_ref:   Login.View,
+                    view_ref:   Forms.Login.View,
                     template:   'login_form',
+                },
+
+                register_form: {
+                    model:      new Forms.Register.Model({}),
+                    el:         '.app-register_form',
+                    view_ref:   Forms.Register.View,
+                    template:   'register_form',
                 },
             };
         },
@@ -156,6 +99,11 @@
         login: function () {
             this._change_current_nav_elem('Login');
             this._hide(['login_form']);
+        },
+
+        register: function () {
+            this._change_current_nav_elem('Register');
+            this._hide(['register_form']);
         },
 
         search: function (query) {
@@ -200,6 +148,7 @@
             heading_content:    $('#src-heading_content'),
             general_content:    $('#src-general_content'),
             login_form:         $('#src-login_form'),
+            register_form:      $('#src-register_form'),
         };
 
         window.app = new MainRouter({
@@ -207,4 +156,4 @@
         });
         Backbone.history.start();
     });
-}) ($, Backbone, _, window.Template);
+}) ($, Backbone, _, window.Template, window.Forms);
