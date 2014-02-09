@@ -24,15 +24,32 @@ my %params = (
     nginx_user      => 'http',
 );
 
+my %content_types = (
+    json            => 'application/json',
+    plain           => 'text/plain',
+);
+
 my %actions = (
     '/cgi-bin/login.cgi'        => {
         sub_ref         => \&login,
-        content_type    => 'application/json',
+        content_type    => 'json',
+        required_fields => [qw( login passw remember )],
+    },
+    '/cgi-bin/register.cgi'     => {
+        sub_ref         => \&register,
+        content_type    => 'json',
     },
 );
 
 sub login {
-    print to_json {ok=>1};
+    my ($query, $params) = @_;
+    print to_json {
+        ok => 1,
+    };
+}
+
+sub register {
+    my ($query, $params) = @_;
 }
 
 sub check_user {
@@ -58,7 +75,7 @@ sub try_run {
     }
     open my $pidfile, '>', $params{pid_path};
     print $pidfile $$;
-    unlink $params{sock_path};
+    unlink $params{sock_path} unless $params{port_used};
 }
 
 sub get_uids {
@@ -92,7 +109,7 @@ sub init {
 
     my %uids = get_uids $params{nginx_user};
     my $socket = FCGI::OpenSocket($params{sock_path}, 10);
-    chown $uids{uid}, $uids{gid}, $params{sock_path};
+    chown $uids{uid}, $uids{gid}, $params{sock_path} unless $params{port_used};
 
     change_user if $params{daemonize};
 
@@ -105,9 +122,21 @@ sub init {
 
     while ($request->Accept() >= 0) {
         pm_pre_dispatch();
+        my $query = CGI->new;
         if (my $ref = $actions{$ENV{SCRIPT_NAME}}) {
-            print "Content-Type: $ref->{content_type}\r\n\r\n";
-            $ref->{sub_ref}->();
+            my $params = $query->Vars;
+            my $flag = 1;
+            for (@{$ref->{required_fields}}) {
+                unless ($params->{$_}) {
+                    print "Status: 400 Bad Request\r\n\r\n";
+                    $flag = 0;
+                    last;
+                }
+            }
+            if ($flag) {
+                print "Content-Type: $content_types{$ref->{content_type}}\r\n\r\n";
+                $ref->{sub_ref}->($query, $params);
+            }
         } else {
             print "Status: 404 Not Found\r\n\r\n";
         }
