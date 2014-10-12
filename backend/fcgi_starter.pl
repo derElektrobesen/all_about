@@ -14,19 +14,20 @@ use POSIX;
 
 use JSON;
 
+my $server_name = "all_about";
+
 my %params = (
-    sock_path           => '/var/run/all_about.sock',
+    sock_path           => "/var/run/$server_name.sock",
     port_used           => 0,
-#    sock_path           => '127.0.0.1:9000',
-    pid_path            => '/var/run/all_about.pid',
+    pid_path            => "/var/run/$server_name.pid",
     need_root           => 1,
     n_processes         => 4,
     daemonize           => 0,
     username            => 'nobody',
     nginx_user          => 'http',
-    sql_user            => 'all_about_user',
-    sql_pass            => 'all_about_password',
-    sql_database_name   => 'all_about',
+    sql_user            => $server_name . '_user',
+    sql_pass            => $server_name . '_password',
+    sql_database_name   => $server_name,
     sql_database_host   => 'localhost',
     sql_database_port   => '3306',
 );
