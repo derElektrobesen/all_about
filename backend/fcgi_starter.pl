@@ -4,6 +4,7 @@ use strict;
 use warnings;
 
 use CGI;
+use CGI::Util qw( unescape );
 use CGI::Fast;
 use FCGI::ProcManager qw(pm_manage pm_pre_dispatch pm_post_dispatch);
 
@@ -21,7 +22,7 @@ my %params = (
     port_used           => 0,
     pid_path            => "/var/run/$server_name.pid",
     need_root           => 1,
-    n_processes         => 4,
+    n_processes         => 1,
     daemonize           => 0,
     username            => 'nobody',
     nginx_user          => 'http',
@@ -48,6 +49,13 @@ my %actions = (
         content_type    => 'json',
         required_fields => [qw( username email name passw )],
     },
+);
+
+my %http_codes = (
+    'ok'                => '200 Ok',
+    'bad_request'       => '400 Bad request',
+    'anauthorized'      => '401 Unauthorized',
+    'not_found'         => '404 Not found',
 );
 
 my %errors = (
@@ -77,9 +85,29 @@ sub _log {
     return syslog 'info', shift;
 }
 
+sub get_uri_params {
+    return undef unless exists $ENV{QUERY_STRING};
+
+    my %result;
+    if ($ENV{QUERY_STRING} =~ /=/) {
+        my(@pairs) = split(/[&;]/, $ENV{QUERY_STRING});
+        my($param, $value);
+        for (@pairs) {
+            ($param, $value) = split '=', $_, 2;
+            $param = unescape($param);
+            $value = unescape($value);
+            $result{$param} = $value;
+        }
+    }
+
+    return wantarray ? %result : \%result;
+}
+
+sub add_header { print "$_\r\n" for @_; }
+
 sub login {
     my ($query, $params) = @_;
-    print to_json {
+    return 'ok', to_json {
         ok => 1,
         hhh => undef,
     };
@@ -202,24 +230,29 @@ sub init {
 
     while ($request->Accept() >= 0) {
         pm_pre_dispatch();
-        my $query = uc($ENV{REQUEST_METHOD}) eq 'POST' ? CGI->new(\*STDIN) : CGI->new;
-        if (my $ref = $actions{$ENV{SCRIPT_NAME}}) {
-            my $params = $query->Vars;
+        my $query = CGI->new;
+        my ($status, $data, $ref) = ('not_found', undef, undef);
+        if ($ref = $actions{$ENV{SCRIPT_NAME}}) {
+            my $params = get_uri_params;
             my $flag = 1;
             for (@{$ref->{required_fields}}) {
-                unless ($params->{$_}) {
-                    print "Status: 400 Bad Request\r\n\r\n";
+                unless (defined $params->{$_}) {
+                    $status = 'bad_request';
                     $flag = 0;
                     last;
                 }
             }
             if ($flag) {
-                print "Content-Type: $content_types{$ref->{content_type}}\r\n\r\n";
-                $ref->{sub_ref}->($query, $params, $dbh);
+                ($status, $data) = $ref->{sub_ref}->($query, $params, $dbh);
             }
-        } else {
-            print "Status: 404 Not Found\r\n\r\n";
         }
+
+        add_header "Status: $http_codes{$status}";
+        add_header "Content-Type: " . $content_types{$ref->{content_type}} . "; charset=UTF-8" if defined $ref;
+        print "\r\n"; # End of response headers
+
+        print $data;
+
         pm_post_dispatch();
     }
     FCGI::CloseSocket($socket);
