@@ -9,14 +9,10 @@ use CGI::Fast;
 use FCGI::ProcManager qw(pm_manage pm_pre_dispatch pm_post_dispatch);
 
 use DBI;
-
-use Sys::Syslog;
 use POSIX;
-
 use JSON;
 
 my $server_name = "all_about";
-
 my %params = (
     sock_path           => "/var/run/$server_name.sock",
     port_used           => 0,
@@ -31,6 +27,9 @@ my %params = (
     sql_database_name   => $server_name,
     sql_database_host   => 'localhost',
     sql_database_port   => '3306',
+    log_level           => 5,
+    log_params          => { sql => 1, },
+    max_queries         => 3,
 );
 
 my %content_types = (
@@ -53,9 +52,10 @@ my %actions = (
 
 my %http_codes = (
     'ok'                => '200 Ok',
-    'bad_request'       => '400 Bad request',
-    'anauthorized'      => '401 Unauthorized',
-    'not_found'         => '404 Not found',
+    'err'               => '500 Internal Error',
+    'bad_request'       => '400 Bad Request',
+    'unauthorized'      => '401 Unauthorized',
+    'not_found'         => '404 Not Found',
 );
 
 my %errors = (
@@ -69,20 +69,27 @@ my %errors = (
     },
 );
 
-my %sql_queries = (
-    last_id             => {
-        t           => 'select last_insert_id()',
-    },
-    add_user            => {
-        t           => 'insert into users(username, password) values (?, MD5(?))',
-    },
-    add_user_info       => {
-        t           => 'insert into users_info(user_id, name, surname, lastname, email) values (?, ?, ?, ?, ?)',
-    },
-);
+my %sql_queries = ();
 
-sub _log {
-    return syslog 'info', shift;
+sub __log {
+    my ($log_level, $type, $msg) = @_; # TODO: Show call point line number
+    warn "[$type] $msg\n" if $log_level <= $params{log_level};
+    #print STDERR "[$type] $msg\n" if $log_level <= $params{log_level};
+}
+
+sub _log  { __log($_[0], "I", $_[1]); }
+sub _warn { __log($_[0], "W", $_[1]); }
+sub _err  { __log(0,     "E", $_[0]); }
+
+sub sql_exec {
+    my ($dbh, $query, @params) = @_;
+
+    my $sth = prepare_sth($query, $dbh);
+    my $count = $sth->execute(@params);
+
+    $count = 0 if !defined($count) || uc($count) eq "0E0";
+
+    return ($sth, $count);
 }
 
 sub get_uri_params {
@@ -106,11 +113,30 @@ sub get_uri_params {
 sub add_header { print "$_\r\n" for @_; }
 
 sub login {
-    my ($query, $params) = @_;
-    return 'ok', to_json {
-        ok => 1,
-        hhh => undef,
-    };
+    my ($query, $params, $dbh) = @_;
+
+    my $status = 'unauthorized';
+    my $data = { ok => 0 };
+
+    my ($sth, $count) = sql_exec($dbh, 'select id from users where username = ? and password = MD5(?)', $params->{login}, $params->{passw});
+
+    if ($count) {
+        my $uid = $sth->fetchrow_arrayref()->[0];
+        $sth->finish;
+
+        ($sth, $count) = sql_exec($dbh, 'select u.username, ui.name, ui.surname, ui.lastname, ui.email ' .
+            'from users u join users_info ui on u.id = ui.user_id where u.id = ?', $uid);
+
+        warn "Uid: $uid, count = $count";
+        if ($count) {
+            my ($login, $name, $surname, $lastname, $email) = $sth->fetchrow_array;
+            $data = { login => $login, name => $name, surname => $surname, lastname => $lastname, email => $email, err_code => 0, };
+            $status = 'ok';
+        }
+    }
+
+    $sth->finish;
+    return $status, to_json $data;
 }
 
 sub register {
@@ -118,25 +144,25 @@ sub register {
     my $err_ref;
 
     $dbh->begin_work;
-    my $sth = prepare_sth('add_user', $dbh);
-    my $count = $sth->execute($params->{username}, $params->{passw});
+    my ($sth, $count) = sql_exec($dbh, 'insert into users(username, password) values (?, MD5(?))',
+        $params->{username}, $params->{passw});
     $sth->finish;
+
     unless ($count) {
         $err_ref = $errors{user_exists};
     } else {
-        $sth = prepare_sth('last_id', $dbh);
-        $sth->execute;
+        ($sth) = sql_exec($dbh, 'select last_insert_id()');
         my $uid = $sth->fetchrow_arrayref()->[0];
         $sth->finish;
 
-        $sth = prepare_sth('add_user_info', $dbh);
-        $count = $sth->execute($uid, $params->{name}, $params->{surname} || undef,
+        ($sth, $count) = sql_exec($dbh, 'insert into users_info(user_id, name, surname, lastname, email) values (?, ?, ?, ?, ?)',
+            $uid, $params->{name}, $params->{surname} || undef,
             $params->{lastname} || undef, $params->{email});
+
         $err_ref = $errors{email_exists} unless $count;
         $sth->finish;
     }
     print to_json {
-        ok          => defined $err_ref ? 0 : 1,
         err_code    => defined $err_ref ? $err_ref->{err_code} : 0,
         err_text    => defined $err_ref ? $err_ref->{err_text} : "Success",
     };
@@ -144,14 +170,30 @@ sub register {
 }
 
 sub prepare_sth {
-    my $name = shift;
+    my $query = shift;
     my $dbh = shift;
-    my $sth_ref = $sql_queries{$name};
-    my $sth = $sth_ref->{q};
+    my $sth_ref = $sql_queries{$query};
+    my $sth = $sth_ref->{sth};
     unless ($sth) {
-        $sth = $dbh->prepare($sth_ref->{t});
-        $sth_ref->{q} = $sth;
+        _log(1, "Preparing sql query '$query'") if $params{log_params}->{sql};
+        $sth = $dbh->prepare($query);
+        $sth_ref->{sth} = $sth;
     }
+
+    $sth_ref->{t} = localtime;
+
+    if (scalar(keys %sql_queries) > $params{max_queries}) {
+        my $to_delete = undef;
+        my $time = undef;
+        for my $q (keys %sql_queries) {
+            if (!defined($to_delete) || $time > $sql_queries{$q}->{t}) {
+                $time = $sql_queries{$q}->{t};
+                $to_delete = $q;
+            }
+        }
+        delete $sql_queries{$to_delete} if defined $to_delete;
+    }
+
     return $sth;
 }
 
@@ -220,7 +262,6 @@ sub init {
         or die "Can't create request: $!\n";
     pm_manage( n_processes => $params{n_processes} );
 
-    openlog("all_about", "ndelay,pid", "local0");
     reopen_std if $params{daemonize};
 
     my $dbh = DBI->connect("DBI:mysql:$params{sql_database_name}:" .
@@ -245,6 +286,12 @@ sub init {
             if ($flag) {
                 ($status, $data) = $ref->{sub_ref}->($query, $params, $dbh);
             }
+        }
+
+        unless (defined $http_codes{$status}) {
+            _err("Unknown http code key found: '$status'");
+            $status = 'err';
+            $ref = $data = undef;
         }
 
         add_header "Status: $http_codes{$status}";
