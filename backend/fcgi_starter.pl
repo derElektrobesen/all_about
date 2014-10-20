@@ -3,14 +3,41 @@
 use strict;
 use warnings;
 
+use Sys::Syslog qw( :standard :macros );
+
 use CGI;
 use CGI::Util qw( unescape );
 use CGI::Fast;
-use FCGI::ProcManager qw(pm_manage pm_pre_dispatch pm_post_dispatch);
+use FCGI::ProcManager qw( pm_manage pm_pre_dispatch pm_post_dispatch );
+use Digest::MD5 qw( md5_hex );
 
 use DBI;
 use POSIX;
 use JSON;
+
+package ErrHandler;
+
+use Tie::StdHandle;
+use strict;
+
+our @ISA = 'Tie::StdHandle';
+
+sub TIEHANDLE {
+    my ($class, @args) = @_;
+    my $self = $class->SUPER::TIEHANDLE;
+    ${*$self}{sub} = $args[0];
+    return $self;
+}
+
+sub WRITE {
+    my $self = shift;
+    my $subroutine = ${*$self}{sub};
+    $subroutine->($_[0]) if defined $subroutine;
+}
+
+1;
+
+package main;
 
 my $server_name = "all_about";
 my %params = (
@@ -31,6 +58,15 @@ my %params = (
     log_params          => { sql => 1, },
     max_queries         => 3,
 );
+
+sub __log {
+    my ($log_level, $type, $msg) = @_; # TODO: Show call point line number
+    syslog($type, $msg) if $log_level <= $params{log_level};
+}
+
+sub _log  { __log($_[0], LOG_INFO,      $_[1]); }
+sub _warn { __log(0,     LOG_WARNING,   $_[0]); }
+sub _err  { __log(0,     LOG_ERR,       $_[0]); }
 
 my %content_types = (
     json            => 'application/json',
@@ -71,16 +107,6 @@ my %errors = (
 
 my %sql_queries = ();
 
-sub __log {
-    my ($log_level, $type, $msg) = @_; # TODO: Show call point line number
-    warn "[$type] $msg\n" if $log_level <= $params{log_level};
-    #print STDERR "[$type] $msg\n" if $log_level <= $params{log_level};
-}
-
-sub _log  { __log($_[0], "I", $_[1]); }
-sub _warn { __log($_[0], "W", $_[1]); }
-sub _err  { __log(0,     "E", $_[0]); }
-
 sub sql_exec {
     my ($dbh, $query, @params) = @_;
 
@@ -112,6 +138,85 @@ sub get_uri_params {
 
 sub add_header { print "$_\r\n" for @_; }
 
+sub is_logged_in {
+
+}
+
+sub check_session {
+    my ($query, $dbh, $uid) = @_;
+
+    unless (defined $uid) {
+        $uid = $query->cookie(-name => 'session');
+    }
+
+    my ($sth, $count) = sql_exec($dbh, 'select id, time, session_id from sessions where user_id = ? and host = ? and ip = ?',
+        $uid, $query->remote_host, $query->remote_addr);
+
+    my %result = ( session_expired => 1 );
+
+    if ($count) {
+        ($result{session_id}, $result{creation_time}, my $session_s_id) = $sth->fetchrow_array;
+        _log(3, "Session_id: $result{session_id}, creation_time: $result{creation_time}, str_s_id: $session_s_id");
+    }
+
+    $sth->finish;
+    return %result;
+}
+
+sub create_session {
+    my ($query, $dbh, $uid, $login) = @_;
+
+    my %session = check_session($query, $dbh);
+    my $sth;
+
+    unless (defined $login) {
+        ($sth, my $count) = sql_exec($dbh, 'select username from users where id = ?', $uid);
+        if ($count) {
+            $login = $sth->fetchrow_arrayref()->[0];
+        } else {
+            $login = "";
+            _warn("Login not found for id $uid");
+        }
+        $sth->finish;
+    }
+
+    my $host = $query->remote_host;
+    my $addr = $query->remote_addr;
+
+    my $session_s_id = sprintf "$login:$host:$addr:%s:%f", scalar localtime, rand 100500;
+    $session_s_id = md5_hex($session_s_id);
+
+    if (defined $session{session_id}) {
+        ($sth) = sql_exec($dbh, 'update sessions set session_id = ?, time = CURRENT_TIMESTAMP where id = ?',
+            $session_s_id, $session{session_id});
+    } else {
+        ($sth) = sql_exec($dbh, 'insert into sessions(user_id, host, ip, session_id) values (?, ?, ?, ?)', $uid, $host, $addr, $session_s_id);
+    }
+
+    $sth->finish;
+
+    return create_session_cookie($uid, $session_s_id);
+}
+
+sub create_session_cookie {
+    my ($userid, $session_id) = @_;
+    my $u_c = cookie(
+        -name       => 'userid',
+        -expires    => '+30d',
+        -value      => $userid || 0,
+        -secure     => 1,
+    );
+
+    my $s_c = cookie(
+        -name       => 'session',
+        -expires    => '+30d',
+        -value      => $session_id || 0,
+        -sequre     => 1,
+    );
+
+    return [$u_c, $s_c];
+}
+
 sub login {
     my ($query, $params, $dbh) = @_;
 
@@ -120,6 +225,8 @@ sub login {
 
     my ($sth, $count) = sql_exec($dbh, 'select id from users where username = ? and password = MD5(?)', $params->{login}, $params->{passw});
 
+    my $cookie = create_session_cookie;
+
     if ($count) {
         my $uid = $sth->fetchrow_arrayref()->[0];
         $sth->finish;
@@ -127,16 +234,19 @@ sub login {
         ($sth, $count) = sql_exec($dbh, 'select u.username, ui.name, ui.surname, ui.lastname, ui.email ' .
             'from users u join users_info ui on u.id = ui.user_id where u.id = ?', $uid);
 
-        warn "Uid: $uid, count = $count";
         if ($count) {
             my ($login, $name, $surname, $lastname, $email) = $sth->fetchrow_array;
-            $data = { login => $login, name => $name, surname => $surname, lastname => $lastname, email => $email, err_code => 0, };
+            $data = { login => $login, name => $name, surname => $surname,
+                lastname => $lastname, email => $email, err_code => 0, };
+            $cookie = create_session($query, $dbh, $uid);
             $status = 'ok';
+        } else {
+            $cookie = create_session_cookie $uid;
         }
     }
 
     $sth->finish;
-    return $status, to_json $data;
+    return $status, $cookie, to_json $data;
 }
 
 sub register {
@@ -257,6 +367,18 @@ sub init {
     chown $uids{uid}, $uids{gid}, $params{sock_path} unless $params{port_used};
 
     change_user if $params{daemonize};
+
+    sub log_errors {
+        my $msg = shift;
+        if ($msg =~ /^FastCGI:/) {
+            _warn($msg);
+        } else {
+            _err($msg);
+        }
+    };
+
+    tie *STDERR, 'ErrHandler', \&log_errors;
+    openlog($server_name, "ndelay,pid,cons", LOG_USER);
 
     my $request = FCGI::Request(\*STDIN, \*STDOUT, \*STDERR, \%ENV, $socket, FCGI::FAIL_ACCEPT_ON_INTR)
         or die "Can't create request: $!\n";
