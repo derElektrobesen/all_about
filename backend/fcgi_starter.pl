@@ -92,17 +92,7 @@ my %http_codes = (
     'bad_request'       => '400 Bad Request',
     'unauthorized'      => '401 Unauthorized',
     'not_found'         => '404 Not Found',
-);
-
-my %errors = (
-    user_exists         => {
-        err_code    => 1,
-        err_text    => 'Username is already exists',
-    },
-    email_exists        => {
-        err_code    => 2,
-        err_text    => 'Email is already in use',
-    },
+    'user_exists'       => '409 Conflict',
 );
 
 my %sql_queries = ();
@@ -136,10 +126,8 @@ sub get_uri_params {
     return wantarray ? %result : \%result;
 }
 
-sub add_header { print "$_\r\n" for @_; }
-
 sub is_logged_in {
-
+    # TODO
 }
 
 sub check_session {
@@ -200,14 +188,14 @@ sub create_session {
 
 sub create_session_cookie {
     my ($userid, $session_id) = @_;
-    my $u_c = cookie(
+    my $u_c = CGI::cookie(
         -name       => 'userid',
         -expires    => '+30d',
         -value      => $userid || 0,
         -secure     => 1,
     );
 
-    my $s_c = cookie(
+    my $s_c = CGI::cookie(
         -name       => 'session',
         -expires    => '+30d',
         -value      => $session_id || 0,
@@ -258,9 +246,9 @@ sub register {
         $params->{username}, $params->{passw});
     $sth->finish;
 
-    unless ($count) {
-        $err_ref = $errors{user_exists};
-    } else {
+    my $cookie;
+    my $status = 'user_exists';
+    if ($count) {
         ($sth) = sql_exec($dbh, 'select last_insert_id()');
         my $uid = $sth->fetchrow_arrayref()->[0];
         $sth->finish;
@@ -268,15 +256,18 @@ sub register {
         ($sth, $count) = sql_exec($dbh, 'insert into users_info(user_id, name, surname, lastname, email) values (?, ?, ?, ?, ?)',
             $uid, $params->{name}, $params->{surname} || undef,
             $params->{lastname} || undef, $params->{email});
-
-        $err_ref = $errors{email_exists} unless $count;
         $sth->finish;
+
+        if ($count) {
+            # Insert was ok
+            $status = 'ok';
+            $cookie = create_session($query, $dbh, $uid);
+            $dbh->commit;
+        } else {
+            $dbh->rollback;
+        }
     }
-    print to_json {
-        err_code    => defined $err_ref ? $err_ref->{err_code} : 0,
-        err_text    => defined $err_ref ? $err_ref->{err_text} : "Success",
-    };
-    defined $err_ref ? $dbh->rollback : $dbh->commit;
+    return $status, $cookie, '';
 }
 
 sub prepare_sth {
@@ -370,11 +361,8 @@ sub init {
 
     sub log_errors {
         my $msg = shift;
-        if ($msg =~ /^FastCGI:/) {
-            _warn($msg);
-        } else {
-            _err($msg);
-        }
+        my $sub = $msg =~ /^FastCGI:/ ? \&_warn : \&_err;
+        $sub->($msg);
     };
 
     tie *STDERR, 'ErrHandler', \&log_errors;
@@ -394,7 +382,7 @@ sub init {
     while ($request->Accept() >= 0) {
         pm_pre_dispatch();
         my $query = CGI->new;
-        my ($status, $data, $ref) = ('not_found', undef, undef);
+        my ($status, $data, $ref, $cookie) = ('not_found', undef, undef, undef);
         if ($ref = $actions{$ENV{SCRIPT_NAME}}) {
             my $params = get_uri_params;
             my $flag = 1;
@@ -406,7 +394,7 @@ sub init {
                 }
             }
             if ($flag) {
-                ($status, $data) = $ref->{sub_ref}->($query, $params, $dbh);
+                ($status, $cookie, $data) = $ref->{sub_ref}->($query, $params, $dbh);
             }
         }
 
@@ -416,11 +404,16 @@ sub init {
             $ref = $data = undef;
         }
 
-        add_header "Status: $http_codes{$status}";
-        add_header "Content-Type: " . $content_types{$ref->{content_type}} . "; charset=UTF-8" if defined $ref;
-        print "\r\n"; # End of response headers
+        print CGI::header(
+            -type => $content_types{$ref->{content_type}},
+            -nph => 1,
+            -status => $http_codes{$status},
+            -expires => '+30d',
+            -cookie => $cookie,
+            -charset => 'utf-8',
+        );
 
-        print $data;
+        print $data if defined $data;
 
         pm_post_dispatch();
     }
