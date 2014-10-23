@@ -153,7 +153,6 @@ sub check_session {
 
 sub create_session {
     my ($query, $dbh, %params) = @_;
-    my ($query, $dbh, $uid, $login, $remember) = @_;
 
     my %session = check_session($query, $dbh, $params{uid});
     my $sth;
@@ -189,7 +188,7 @@ sub create_session {
 
     $sth->finish;
 
-    return create_session_cookie($params{uid}, $session_s_id);
+    return create_session_cookie(uid => $params{uid}, sid => $session_s_id, save_session => $params{remember});
 }
 
 sub create_session_cookie {
@@ -202,13 +201,13 @@ sub create_session_cookie {
 
     my $u_c = CGI::cookie(
         -name       => 'userid',
-        -value      => $params{user_id} || 0,
+        -value      => $params{uid} || 0,
         %cookie_params,
     );
 
     my $s_c = CGI::cookie(
         -name       => 'session',
-        -value      => $params{session_id} || 0,
+        -value      => $params{sid} || 0,
         %cookie_params,
     );
 
@@ -236,7 +235,7 @@ sub login {
             my ($login, $name, $surname, $lastname, $email) = $sth->fetchrow_array;
             $data = { login => $login, name => $name, surname => $surname,
                 lastname => $lastname, email => $email, err_code => 0, };
-            $cookie = create_session($query, $dbh, $uid, undef, $params->{remember});
+            $cookie = create_session($query, $dbh, uid => $uid, remember => $params->{remember});
             $status = 'ok';
         } else {
             $cookie = create_session_cookie(save_session => $params->{remember}, uid => $uid);
@@ -271,7 +270,7 @@ sub register {
         if ($count) {
             # Insert was ok
             $status = 'ok';
-            $cookie = create_session($query, $dbh, $uid);
+            $cookie = create_session($query, $dbh, uid => $uid);
             $dbh->commit;
         } else {
             $dbh->rollback;
