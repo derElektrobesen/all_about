@@ -152,54 +152,64 @@ sub check_session {
 }
 
 sub create_session {
-    my ($query, $dbh, $uid, $login) = @_;
+    my ($query, $dbh, %params) = @_;
+    my ($query, $dbh, $uid, $login, $remember) = @_;
 
-    my %session = check_session($query, $dbh);
+    my %session = check_session($query, $dbh, $params{uid});
     my $sth;
 
-    unless (defined $login) {
-        ($sth, my $count) = sql_exec($dbh, 'select username from users where id = ?', $uid);
+    unless (defined $params{login}) {
+        ($sth, my $count) = sql_exec($dbh, 'select username from users where id = ?', $params{uid});
         if ($count) {
-            $login = $sth->fetchrow_arrayref()->[0];
+            $params{login} = $sth->fetchrow_arrayref()->[0];
         } else {
-            $login = "";
-            _warn("Login not found for id $uid");
+            $params{login} = "";
+            _err("Login not found for id $params{uid}");
         }
         $sth->finish;
+
+        unless ($params{login}) {
+            _warn("Login for $params{uid} uid is empty");
+            return undef;
+        }
     }
 
     my $host = $query->remote_host;
     my $addr = $query->remote_addr;
 
-    my $session_s_id = sprintf "$login:$host:$addr:%s:%f", scalar localtime, rand 100500;
+    my $session_s_id = sprintf "$params{login}:$host:$addr:%s:%f", time, rand 100500;
     $session_s_id = md5_hex($session_s_id);
 
     if (defined $session{session_id}) {
         ($sth) = sql_exec($dbh, 'update sessions set session_id = ?, time = CURRENT_TIMESTAMP where id = ?',
             $session_s_id, $session{session_id});
     } else {
-        ($sth) = sql_exec($dbh, 'insert into sessions(user_id, host, ip, session_id) values (?, ?, ?, ?)', $uid, $host, $addr, $session_s_id);
+        ($sth) = sql_exec($dbh, 'insert into sessions(user_id, host, ip, session_id) values (?, ?, ?, ?)', $params{uid}, $host, $addr, $session_s_id);
     }
 
     $sth->finish;
 
-    return create_session_cookie($uid, $session_s_id);
+    return create_session_cookie($params{uid}, $session_s_id);
 }
 
 sub create_session_cookie {
-    my ($userid, $session_id) = @_;
+    my %params = @_;
+
+    my %cookie_params = ( -secure => 1 );
+    if ($params{save_session}) {
+        $cookie_params{'-expires'} = '+30d';
+    }
+
     my $u_c = CGI::cookie(
         -name       => 'userid',
-        -expires    => '+30d',
-        -value      => $userid || 0,
-        -secure     => 1,
+        -value      => $params{user_id} || 0,
+        %cookie_params,
     );
 
     my $s_c = CGI::cookie(
         -name       => 'session',
-        -expires    => '+30d',
-        -value      => $session_id || 0,
-        -sequre     => 1,
+        -value      => $params{session_id} || 0,
+        %cookie_params,
     );
 
     return [$u_c, $s_c];
@@ -213,7 +223,7 @@ sub login {
 
     my ($sth, $count) = sql_exec($dbh, 'select id from users where username = ? and password = MD5(?)', $params->{login}, $params->{passw});
 
-    my $cookie = create_session_cookie;
+    my $cookie = create_session_cookie(save_session => $params->{remember});
 
     if ($count) {
         my $uid = $sth->fetchrow_arrayref()->[0];
@@ -226,10 +236,10 @@ sub login {
             my ($login, $name, $surname, $lastname, $email) = $sth->fetchrow_array;
             $data = { login => $login, name => $name, surname => $surname,
                 lastname => $lastname, email => $email, err_code => 0, };
-            $cookie = create_session($query, $dbh, $uid);
+            $cookie = create_session($query, $dbh, $uid, undef, $params->{remember});
             $status = 'ok';
         } else {
-            $cookie = create_session_cookie $uid;
+            $cookie = create_session_cookie(save_session => $params->{remember}, uid => $uid);
         }
     }
 
