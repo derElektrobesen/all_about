@@ -45,8 +45,30 @@ our $VERSION = '1.0';
 sub HELP_MESSAGE() { pod2usage(1) and exit 0; }
 sub VERSION_MESSAGE() { print STDERR "$0 v.$VERSION\n"; }
 
-my $server_name = "SimpleServer";
-my %global_parametrs;
+our %global_parametrs;
+
+sub update_default_global_parametrs {
+    my $srv_name = shift;
+    %global_parametrs = (
+        server_name         => $srv_name,
+        sock_path           => "/var/run/$srv_name.sock",
+        pid_path            => "/var/run/$srv_name.pid",
+        need_root           => 1,
+        n_processes         => 4,
+        daemonize           => 0,
+        username            => 'nobody',
+        nginx_user          => 'nobody',
+        db_user             => '',
+        db_pass             => '',
+        db_name             => '',
+        db_host             => 'localhost',
+        db_port             => '3306',
+        log_level           => 1,
+        max_queries         => 30,
+        log_params          => {},
+        @_,
+    );
+}
 
 sub read_config {
     my $cfg_path = shift;
@@ -70,6 +92,7 @@ sub read_config {
 
     open my $f, '<', $cfg_path;
 
+    my (%params, $server_name);
     while (<$f>) {
         chomp;
         next if $_ =~ /^\s*$/;
@@ -85,35 +108,17 @@ sub read_config {
             if ($key eq 'server_name') {
                 $server_name = $val;
             } elsif ($params_types{$key} eq 'scalar') {
-                $global_parametrs{$key} = $val;
+                $params{$key} = $val;
             } elsif ($params_types{$key} eq 'list') {
-                $global_parametrs{$key} = [ split /[,\s]+/, $val ];
+                $params{$key} = [ split /[,\s]+/, $val ];
             } elsif ($params_types{$key} eq 'lmap') {
-                $global_parametrs{$key} = { map { $_ => 1 } split /[,\s]+/, $val };
+                $params{$key} = { map { $_ => 1 } split /[,\s]+/, $val };
             }
         } else {
             print STDERR "Unknown config file option line found: '$_'\n";
         }
     }
-
-    %global_parametrs = (
-        sock_path           => "/var/run/$server_name.sock",
-        pid_path            => "/var/run/$server_name.pid",
-        need_root           => 1,
-        n_processes         => 1,
-        daemonize           => 0,
-        username            => 'nobody',
-        nginx_user          => 'nobody',
-        db_user             => $server_name . '_user',
-        db_pass             => $server_name . '_password',
-        db_name             => $server_name,
-        db_host             => 'localhost',
-        db_port             => '3306',
-        log_level           => 1,
-        log_params          => {},
-        max_queries         => 30,
-        %global_paramets,
-    );
+    return ($server_name, %params);
 }
 
 sub parse_cmd_line_args {
@@ -121,7 +126,9 @@ sub parse_cmd_line_args {
 
     pod2usage(1) and exit 0 if defined $args{h}; # Show help message and exit
 
-    read_config($args{c}) if defined $args{c};
+    my @cfg = qw( SimpleServer ); # First arg is server name
+    @cfg = read_config($args{c}) if defined $args{c};
+    update_default_global_parametrs(@cfg);
 
     $global_parametrs{daemonize} = defined $args{d}; # Daemonization
 }
@@ -426,6 +433,13 @@ sub reopen_std {
 }
 
 sub init {
+    {
+        my $dbh = DBI->connect("DBI:mysql:$global_parametrs{db_name}:" .
+            "$global_parametrs{db_host}:$global_parametrs{db_port}", $global_parametrs{db_user}, $global_parametrs{db_pass},
+            { RaiseError => 0, PrintError => 1, });
+        die "Can't connect to DB.\n" unless $dbh;
+    }
+
     daemonize if $global_parametrs{daemonize};
 
     my %uids = get_uids $global_parametrs{nginx_user};
@@ -441,7 +455,7 @@ sub init {
     };
 
     tie *STDERR, 'ErrHandler', \&log_errors;
-    openlog($server_name, "ndelay,pid,cons", LOG_USER);
+    openlog($global_parametrs{server_name}, "ndelay,pid,cons", LOG_USER);
 
     my $request = FCGI::Request(\*STDIN, \*STDOUT, \*STDERR, \%ENV, $socket, FCGI::FAIL_ACCEPT_ON_INTR)
         or die "Can't create request: $!\n";
@@ -553,15 +567,15 @@ Set nginx user name. For a socket permissions is needed [default: nobody].
 
 =item B<db_name>
 
-Set database name. Option is required.
+Set database name. Default value is an empty field.
 
 =item B<db_user>
 
-Set database user name. Option is required.
+Set database user name. Default value is an empty field.
 
 =item B<db_pass>
 
-Set database user password. Option is required.
+Set database user password. Default value is an empty field.
 
 =item B<db_host>
 
