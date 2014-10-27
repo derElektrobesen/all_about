@@ -5,14 +5,12 @@
 
         View: Backbone.View.extend({
             initialize: function ($template, args) {
-                this.template = _.template($template.html());
+                this.template = _.template($($template).html());
                 this.model.on('change', this.render, this);
                 if (this.init)
                     this.init();
-                if (args) {
-                    if (args.render_on_init)
-                        this.render();
-                }
+                if (args && args.render_on_init)
+                    this.render();
             },
 
             render: function () {
