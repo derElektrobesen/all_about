@@ -488,6 +488,7 @@ sub init {
             my $flag = 1;
             for (@{$ref->{required_fields}}) {
                 unless (defined $params->{$_}) {
+                    _warn("Required field '$_' not found in request params");
                     $status = 'bad_request';
                     $flag = 0;
                     last;
@@ -496,6 +497,8 @@ sub init {
             if ($flag) {
                 ($status, $cookie, $data) = $ref->{sub_ref}->($query, $params, $dbh);
             }
+        } else {
+            _warn("Requested script not found on server: '$ENV{SCRIPT_NAME}'");
         }
 
         unless (defined $http_codes{$status}) {
