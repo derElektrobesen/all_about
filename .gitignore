@@ -1,4 +1,3 @@
-frontend/js/lib/*
 *~
 *.swp
 .*.swp
@@ -9,3 +8,4 @@ underscore*
 glyphicons*
 *.bak
 backend/all_about.conf
+tags
