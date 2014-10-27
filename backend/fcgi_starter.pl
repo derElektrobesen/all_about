@@ -135,6 +135,10 @@ sub parse_cmd_line_args {
 
 sub __log {
     my ($log_level, $type, $msg) = @_; # TODO: Show call point line number
+
+    # TODO: REMOVE ME
+    $type = LOG_WARNING;
+
     syslog($type, $msg) if $log_level <= $global_parametrs{log_level};
 }
 
@@ -472,6 +476,13 @@ sub init {
         pm_pre_dispatch();
         my $query = CGI->new;
         my ($status, $data, $ref, $cookie) = ('not_found', undef, undef, undef);
+
+        if (defined $global_parametrs{log_params}{query}) {
+            my $query_str = "Request: ";
+            $query_str .= join ', ', map { "[$_: $ENV{$_}]" } qw( SCRIPT_NAME QUERY_STRING );
+            _log(1, $query_str);
+        }
+
         if ($ref = $actions{$ENV{SCRIPT_NAME}}) {
             my $params = get_uri_params;
             my $flag = 1;
@@ -592,9 +603,20 @@ All messages will be sent in syslog.
 
 =item B<log_params>
 
-A comma-splitted list of extra logging features.
+A comma-separated list of extra logging features.
 Available features:
-[ sql ]
+
+=over 16
+
+=item I<sql>
+
+Log all sql requests
+
+=item I<query>
+
+Log all http(s) requests
+
+=back
 
 =back
 
