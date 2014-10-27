@@ -186,19 +186,25 @@ sub sql_exec {
     return ($sth, $count);
 }
 
-sub get_uri_params {
-    return undef unless exists $ENV{QUERY_STRING};
-
+sub get_request_params {
+    my $query = shift;
     my %result;
-    if ($ENV{QUERY_STRING} =~ /=/) {
-        my(@pairs) = split(/[&;]/, $ENV{QUERY_STRING});
-        my($param, $value);
-        for (@pairs) {
-            ($param, $value) = split '=', $_, 2;
-            $param = unescape($param);
-            $value = unescape($value);
-            $result{$param} = $value;
+
+    if (defined $ENV{QUERY_STRING}) {
+        if ($ENV{QUERY_STRING} =~ /=/) {
+            my(@pairs) = split(/[&;]/, $ENV{QUERY_STRING});
+            my($param, $value);
+            for (@pairs) {
+                ($param, $value) = split '=', $_, 2;
+                $param = unescape($param);
+                $value = unescape($value);
+                $result{$param} = $value;
+            }
         }
+    }
+
+    if (my $post_params_ptr = $query->Vars) {
+        grep { $result{$_} = $post_params_ptr->{$_} } keys %$post_params_ptr;
     }
 
     return wantarray ? %result : \%result;
@@ -477,15 +483,19 @@ sub init {
         my $query = CGI->new;
         my ($status, $data, $ref, $cookie) = ('not_found', undef, undef, undef);
 
-        if (defined $global_parametrs{log_params}{query}) {
-            my $query_str = "Request: ";
-            $query_str .= join ', ', map { "[$_: $ENV{$_}]" } qw( SCRIPT_NAME QUERY_STRING );
-            _log(1, $query_str);
-        }
-
         if ($ref = $actions{$ENV{SCRIPT_NAME}}) {
-            my $params = get_uri_params;
+            my $params = get_request_params $query;
             my $flag = 1;
+
+            if (defined $global_parametrs{log_params}{query}) {
+                my $query_str = "Request: ";
+                $query_str .= join ', ', map { "[$_: $ENV{$_}]" } qw( SCRIPT_NAME ); # for debug features
+
+                # TODO: Mask 'password' request field
+                $query_str .= " [REQUEST_PARAMS: " . join(', ', map { "{ $_: $params->{$_} }" } keys %$params) . ']';
+                _log(1, $query_str);
+            }
+
             for (@{$ref->{required_fields}}) {
                 unless (defined $params->{$_}) {
                     _warn("Required field '$_' not found in request params");
