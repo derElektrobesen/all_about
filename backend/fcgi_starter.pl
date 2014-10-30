@@ -66,6 +66,7 @@ sub update_default_global_parametrs {
         db_port             => '3306',
         log_level           => 1,
         max_queries         => 30,
+        session_expire_time => 30 * 24 * 60 * 60, # 30 days in seconds
         log_params          => {},
         @_,
     );
@@ -135,17 +136,19 @@ sub parse_cmd_line_args {
 }
 
 sub __log {
-    my ($log_level, $type, $msg) = @_; # TODO: Show call point line number
+    my ($log_level, $type, $msg, @args) = @_; # TODO: Show call point line number
 
     # TODO: REMOVE ME
     $type = LOG_WARNING;
 
+    $msg = sprintf $msg, @args if scalar @args;
     syslog($type, $msg) if $log_level <= $global_parametrs{log_level};
 }
 
-sub _log  { __log($_[0], LOG_INFO,      $_[1]); }
-sub _warn { __log(0,     LOG_WARNING,   $_[0]); }
-sub _err  { __log(0,     LOG_ERR,       $_[0]); }
+sub _log  { my $lvl = shift;
+            __log($lvl,  LOG_INFO,      @_); }
+sub _warn { __log(0,     LOG_WARNING,   @_); }
+sub _err  { __log(0,     LOG_ERR,       @_); }
 
 my %content_types = (
     json            => 'application/json',
@@ -157,11 +160,13 @@ my %actions = (
         sub_ref         => \&login,
         content_type    => 'json',
         required_fields => [qw( login passw remember )],
+        need_login      => 0,
     },
     '/cgi-bin/register.cgi'     => {
         sub_ref         => \&register,
         content_type    => 'json',
         required_fields => [qw( username email name passw )],
+        need_login      => 0,
     },
 );
 
@@ -212,35 +217,34 @@ sub get_request_params {
     return wantarray ? %result : \%result;
 }
 
-sub is_logged_in {
-    # TODO
-}
-
 sub check_session {
-    my ($query, $dbh, $uid) = @_;
+    my ($query, $dbh) = @_;
 
-    unless (defined $uid) {
-        $uid = $query->cookie(-name => 'session');
-    }
+    my %r = ( expired => 1 );
+    my $session_id = $query->cookie('session');
+    return %r unless $session_id; # No session in cookie
 
-    my ($sth, $count) = sql_exec($dbh, 'select id, time, session_id from sessions where user_id = ? and host = ? and ip = ?',
-        $uid, $query->remote_host, $query->remote_addr);
+    my ($sth, $count) = sql_exec($dbh, 'select id, user_id, UNIX_TIMESTAMP(time), ' .
+        'host, ip from sessions where session_id = ?', $session_id);
+    return %r unless $count; # No session in db
 
-    my %result = ( session_expired => 1 );
-
-    if ($count) {
-        ($result{session_id}, $result{creation_time}, my $session_s_id) = $sth->fetchrow_array;
-        _log(3, "Session_id: $result{session_id}, creation_time: $result{creation_time}, str_s_id: $session_s_id");
-    }
-
+    my ($id, $uid, $time, $host, $ip) = $sth->fetchrow_array();
     $sth->finish;
-    return %result;
+
+    return %r if $host ne $query->remote_host || $ip ne $query->remote_addr; # Other PC
+
+    if ($time + $global_parametrs{session_expire_time} >= time()) {
+        sql_exec($dbh, "delete from sessions where session_id = ?", $session_id);
+        return %r;
+    }
+
+    return ( uid => $uid, session_id => $session_id, id => $id );
 }
 
 sub create_session {
     my ($query, $dbh, %params) = @_;
 
-    my %session = check_session($query, $dbh, $params{uid});
+    my %session = check_session($query, $dbh);
     my $sth;
 
     unless (defined $params{login}) {
@@ -265,9 +269,9 @@ sub create_session {
     my $session_s_id = sprintf "$params{login}:$host:$addr:%s:%f", time, rand 100500;
     $session_s_id = md5_hex($session_s_id);
 
-    if (defined $session{session_id}) {
+    if (defined $session{id}) {
         ($sth) = sql_exec($dbh, 'update sessions set session_id = ?, time = CURRENT_TIMESTAMP where id = ?',
-            $session_s_id, $session{session_id});
+            $session_s_id, $session{id});
     } else {
         ($sth) = sql_exec($dbh, 'insert into sessions(user_id, host, ip, session_id) values (?, ?, ?, ?)', $params{uid}, $host, $addr, $session_s_id);
     }
@@ -285,19 +289,26 @@ sub create_session_cookie {
         $cookie_params{'-expires'} = '+30d';
     }
 
-    my $u_c = CGI::cookie(
-        -name       => 'userid',
-        -value      => $params{uid} || 0,
-        %cookie_params,
-    );
-
     my $s_c = CGI::cookie(
         -name       => 'session',
-        -value      => $params{sid} || 0,
+        -value      => $params{sid} || "",
         %cookie_params,
     );
 
-    return [$u_c, $s_c];
+    return [ $s_c ];
+}
+
+sub get_user_info {
+    my ($uid, $dbh) = @_;
+
+    my ($sth, $count) = sql_exec($dbh, 'select u.username, ui.name, ui.surname, ui.lastname, ui.email ' .
+            'from users u join users_info ui on u.id = ui.user_id where u.id = ?', $uid);
+
+    my %r;
+    if ($count) {
+        ($r{login}, $r{name}, $r{surname}, $r{lastname}, $r{email}) = $sth->fetchrow_array();
+    }
+    return %r;
 }
 
 sub fetch_user_info {
@@ -306,22 +317,32 @@ sub fetch_user_info {
     my ($sth, $count) = sql_exec($dbh, 'select u.username, ui.name, ui.surname, ui.lastname, ui.email ' .
             'from users u join users_info ui on u.id = ui.user_id where u.id = ?', $uid);
 
-    my $data = {};
+    my %data = get_user_info($uid, $dbh);
+
     my $cookie;
-    if ($count) {
-        my ($login, $name, $surname, $lastname, $email) = $sth->fetchrow_array;
-        $data = { login => $login, name => $name, surname => $surname,
-            lastname => $lastname, email => $email, err_code => 0, };
+    if (%data) {
+        $data{err_code} = 0;
         $cookie = create_session($query, $dbh, uid => $uid, remember => $remember);
     } else {
         $cookie = create_session_cookie(save_session => $remember, uid => $uid);
     }
 
-    return ($cookie, $data);
+    return ($cookie, \%data);
 }
 
 sub login {
     my ($query, $params, $dbh) = @_;
+
+    my %session = check_session($query, $dbh);
+
+    if (defined $session{uid}) {
+        my %info = get_user_info($session{uid}, $dbh);
+        if ($info{login} eq $params->{login}) {
+            return 'ok', undef, to_json \%info;
+        } else {
+            sql_exec($dbh, "delete from sessions where id = ?", $session{id});
+        }
+    }
 
     my $status = 'unauthorized';
     my $data = {};
@@ -525,12 +546,25 @@ sub init {
                 _log(1, $query_str);
             }
 
+            if (defined $global_parametrs{log_params}->{cookie}) {
+                _log(1, "[COOKIES: " . join(', ',
+                        map { "{ $_, " . ($query->cookie($_) || '') . " }" } $query->cookie()) . ']');
+            }
+
             for (@{$ref->{required_fields}}) {
                 unless (defined $params->{$_}) {
                     _warn("Required field '$_' not found in request params");
                     $status = 'bad_request';
                     $flag = 0;
                     last;
+                }
+            }
+            if ($flag && $ref->{need_login}) {
+                my %r = check_session($query, $dbh);
+                if ($r{expired}) {
+                    $status = "unauthorized";
+                    $flag = 0;
+                    $cookie = create_session_cookie; # This will delete cookie
                 }
             }
             if ($flag) {
@@ -659,6 +693,10 @@ A comma-separated list of extra logging features.
 Available features:
 
 =over 16
+
+=item I<cookie>
+
+Log request cookies list
 
 =item I<sql>
 
