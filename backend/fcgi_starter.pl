@@ -168,6 +168,11 @@ my %actions = (
         required_fields => [qw( username email name passw )],
         need_login      => 0,
     },
+    '/cgi-bin/get_user_info.cgi' => {
+        sub_ref         => \&get_info_about_user,
+        content_type    => 'json',
+        need_login      => 1,
+    },
 );
 
 my %http_codes = (
@@ -233,7 +238,7 @@ sub check_session {
 
     return %r if $host ne $query->remote_host || $ip ne $query->remote_addr; # Other PC
 
-    if ($time + $global_parametrs{session_expire_time} >= time()) {
+    if ($time + $global_parametrs{session_expire_time} <= time()) {
         sql_exec($dbh, "delete from sessions where session_id = ?", $session_id);
         return %r;
     }
@@ -309,6 +314,12 @@ sub get_user_info {
         ($r{login}, $r{name}, $r{surname}, $r{lastname}, $r{email}) = $sth->fetchrow_array();
     }
     return %r;
+}
+
+sub get_info_about_user {
+    my ($query, $params, $dbh) = @_;
+    my %data = get_user_info($params->{'-uid'}, $dbh);
+    return 'ok', undef, to_json \%data;
 }
 
 sub fetch_user_info {
@@ -565,6 +576,8 @@ sub init {
                     $status = "unauthorized";
                     $flag = 0;
                     $cookie = create_session_cookie; # This will delete cookie
+                } else {
+                    $params->{'-uid'} = $r{uid};
                 }
             }
             if ($flag) {

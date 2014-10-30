@@ -1,7 +1,7 @@
 (function ($, Backbone, _, Template) {
 
     var user_info_model_ptr = undefined;
-    function navigate_on_logged_in(data) {
+    function navigate_on_logged_in(data, dont_redirect) {
         $(".login_tab").hide();
         user_info_model_ptr.set({
             logged_in: true,
@@ -11,7 +11,8 @@
             surname: data.surname,
             lastname: data.lastname,
         });
-        window.app.navigate("#about", true);
+        if (!dont_redirect)
+            window.app.navigate("#about", true);
     }
 
     var Login = {
@@ -176,6 +177,13 @@
 
             initialize: function () {
                 user_info_model_ptr = this;
+
+                $.ajax({
+                    url:            '/cgi-bin/get_user_info.cgi',
+                    success:        function (data) {
+                        navigate_on_logged_in(data, true);
+                    },
+                });
             },
         }),
 
