@@ -2,7 +2,6 @@
 <form class="form-horizontal">
 <fieldset>
 
-<!-- Form Name -->
 <legend>User informaition</legend>
 
 <% if (logged_in) { %>
@@ -16,7 +15,7 @@
     <tr><td>Lastname:</td><td><%= lastname %></td></tr>
   </table>
 </div>
-
+<button type="button" class="btn btn-default btn-sm pull-right" id='btn_logout'>Logout</button><br>
 <% } else { %>
 
 <h2>Need to <a href="#login">login</a></h2>

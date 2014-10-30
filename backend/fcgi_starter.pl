@@ -173,6 +173,10 @@ my %actions = (
         content_type    => 'json',
         need_login      => 1,
     },
+    '/cgi-bin/logout.cgi'       => {
+        sub_ref         => \&logout,
+        need_login      => 1,
+    },
 );
 
 my %http_codes = (
@@ -339,6 +343,14 @@ sub fetch_user_info {
     }
 
     return ($cookie, \%data);
+}
+
+sub logout {
+    my ($query, $params, $dbh) = @_;
+    my $sid = $query->cookie('session');
+
+    sql_exec($dbh, "delete from sessions where session_id = ?", $sid);
+    return ('ok', create_session_cookie);
 }
 
 sub login {
@@ -580,6 +592,7 @@ sub init {
                     $params->{'-uid'} = $r{uid};
                 }
             }
+
             if ($flag) {
                 ($status, $cookie, $data) = $ref->{sub_ref}->($query, $params, $dbh);
                 if (defined $global_parametrs{log_params}->{response}) {

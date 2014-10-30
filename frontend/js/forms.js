@@ -177,7 +177,6 @@
 
             initialize: function () {
                 user_info_model_ptr = this;
-
                 $.ajax({
                     url:            '/cgi-bin/get_user_info.cgi',
                     success:        function (data) {
@@ -188,6 +187,10 @@
         }),
 
         View: Template.View.extend({
+            init: function () {
+                this.$el.on('click', '#btn_logout', this.logout);
+            },
+
             render: function () {
                 this.$el.html(this.template({
                     logged_in:      this.model.get('logged_in'),
@@ -202,6 +205,25 @@
             show: function () {
                 this.render();
                 this.$el.removeClass("hide");
+            },
+
+            logout: function () {
+                var self = this;
+                $.ajax({
+                    url:            '/cgi-bin/logout.cgi',
+                    success:        function () {
+                        $(".login_tab").show();
+                        window.app.navigate("#", true);
+                        user_info_model_ptr.set({
+                            logged_in:          false,
+                            username:           undefined,
+                            email:              undefined,
+                            name:               undefined,
+                            surname:            undefined,
+                            lastname:           undefined,
+                        });
+                    },
+                });
             },
         }),
     };
