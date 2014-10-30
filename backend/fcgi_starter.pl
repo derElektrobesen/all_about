@@ -53,6 +53,8 @@ sub update_default_global_parametrs {
         server_name         => $srv_name,
         sock_path           => "/var/run/$srv_name.sock",
         pid_path            => "/var/run/$srv_name.pid",
+        stderr_to_syslog    => 0,
+        extra_sql_log       => 1,
         need_root           => 1,
         n_processes         => 4,
         daemonize           => 0,
@@ -178,7 +180,7 @@ my %sql_queries = ();
 sub sql_exec {
     my ($dbh, $query, @params) = @_;
 
-    my $sth = prepare_sth($query, $dbh);
+    my $sth = prepare_sth($query, $dbh, @params);
     my $count = $sth->execute(@params);
 
     $count = 0 if !defined($count) || uc($count) eq "0E0";
@@ -298,11 +300,31 @@ sub create_session_cookie {
     return [$u_c, $s_c];
 }
 
+sub fetch_user_info {
+    my ($uid, $dbh, $query, $remember) = @_;
+
+    my ($sth, $count) = sql_exec($dbh, 'select u.username, ui.name, ui.surname, ui.lastname, ui.email ' .
+            'from users u join users_info ui on u.id = ui.user_id where u.id = ?', $uid);
+
+    my $data = {};
+    my $cookie;
+    if ($count) {
+        my ($login, $name, $surname, $lastname, $email) = $sth->fetchrow_array;
+        $data = { login => $login, name => $name, surname => $surname,
+            lastname => $lastname, email => $email, err_code => 0, };
+        $cookie = create_session($query, $dbh, uid => $uid, remember => $remember);
+    } else {
+        $cookie = create_session_cookie(save_session => $remember, uid => $uid);
+    }
+
+    return ($cookie, $data);
+}
+
 sub login {
     my ($query, $params, $dbh) = @_;
 
     my $status = 'unauthorized';
-    my $data = { ok => 0 };
+    my $data = {};
 
     my ($sth, $count) = sql_exec($dbh, 'select id from users where username = ? and password = MD5(?)', $params->{login}, $params->{passw});
 
@@ -310,20 +332,8 @@ sub login {
 
     if ($count) {
         my $uid = $sth->fetchrow_arrayref()->[0];
-        $sth->finish;
-
-        ($sth, $count) = sql_exec($dbh, 'select u.username, ui.name, ui.surname, ui.lastname, ui.email ' .
-            'from users u join users_info ui on u.id = ui.user_id where u.id = ?', $uid);
-
-        if ($count) {
-            my ($login, $name, $surname, $lastname, $email) = $sth->fetchrow_array;
-            $data = { login => $login, name => $name, surname => $surname,
-                lastname => $lastname, email => $email, err_code => 0, };
-            $cookie = create_session($query, $dbh, uid => $uid, remember => $params->{remember});
-            $status = 'ok';
-        } else {
-            $cookie = create_session_cookie(save_session => $params->{remember}, uid => $uid);
-        }
+        ($cookie, $data) = fetch_user_info($uid, $dbh, $query, $params->{remember});
+        $status = 'ok' if scalar %$data;
     }
 
     $sth->finish;
@@ -334,6 +344,19 @@ sub register {
     my ($query, $params, $dbh) = @_;
     my $err_ref;
 
+    $params->{username} =~ s/^\s*(.*)\s*$/$1/;
+
+    my $ret_err = sub {
+        my ($field, $text) = @_;
+        return 'bad_request', undef, to_json({ error => "Incorrect $field format" . (defined $text ? ": $text" : "") });
+    };
+
+    for (qw( username passw name surname lastname email )) {
+        return $ret_err->($_, 'field is empty') unless length $params->{$_};
+    }
+    return $ret_err->('username', 'spaces found') if $params->{username} =~ /\s/;
+    return $ret_err->('email') unless $params->{email} =~ /^[\w.\d]+@[\w.\d]+$/; # TODO: Fix email mask
+
     $dbh->begin_work;
     my ($sth, $count) = sql_exec($dbh, 'insert into users(username, password) values (?, MD5(?))',
         $params->{username}, $params->{passw});
@@ -341,6 +364,7 @@ sub register {
 
     my $cookie;
     my $status = 'user_exists';
+    my $data = { error => 'User already exists' };
     if ($count) {
         ($sth) = sql_exec($dbh, 'select last_insert_id()');
         my $uid = $sth->fetchrow_arrayref()->[0];
@@ -354,13 +378,14 @@ sub register {
         if ($count) {
             # Insert was ok
             $status = 'ok';
-            $cookie = create_session($query, $dbh, uid => $uid);
+            ($cookie, $data) = fetch_user_info($uid, $dbh, $query, 1);
             $dbh->commit;
         } else {
+            $data = { error => 'Email is already registered' };
             $dbh->rollback;
         }
     }
-    return $status, $cookie, '';
+    return $status, $cookie, to_json $data;
 }
 
 sub prepare_sth {
@@ -370,6 +395,7 @@ sub prepare_sth {
     my $sth = $sth_ref->{sth};
     unless ($sth) {
         _log(1, "Preparing sql query '$query'") if $global_parametrs{log_params}->{sql};
+        _log(1, "Sql params: [" . join(', ', @_) . "]") if $global_parametrs{extra_sql_log};
         $sth = $dbh->prepare($query);
         $sth_ref->{sth} = $sth;
     }
@@ -464,7 +490,8 @@ sub init {
         $sub->($msg);
     };
 
-    tie *STDERR, 'ErrHandler', \&log_errors;
+    tie *STDERR, 'ErrHandler', \&log_errors if $global_parametrs{stderr_to_syslog};
+
     openlog($global_parametrs{server_name}, "ndelay,pid,cons", LOG_USER);
 
     my $request = FCGI::Request(\*STDIN, \*STDOUT, \*STDERR, \%ENV, $socket, FCGI::FAIL_ACCEPT_ON_INTR)
@@ -487,7 +514,7 @@ sub init {
             my $params = get_request_params $query;
             my $flag = 1;
 
-            if (defined $global_parametrs{log_params}{query}) {
+            if (defined $global_parametrs{log_params}->{query}) {
                 my $query_str = "Request: ";
                 $query_str .= join ', ', map { "[$_: $ENV{$_}]" } qw( SCRIPT_NAME ); # for debug features
 
@@ -506,6 +533,9 @@ sub init {
             }
             if ($flag) {
                 ($status, $cookie, $data) = $ref->{sub_ref}->($query, $params, $dbh);
+                if (defined $global_parametrs{log_params}->{response}) {
+                    _log(1, "Response: [Status: $http_codes{$status}], [Data: $data]");
+                }
             }
         } else {
             _warn("Requested script not found on server: '$ENV{SCRIPT_NAME}'");
@@ -529,6 +559,7 @@ sub init {
         print $data if defined $data;
 
         pm_post_dispatch();
+        $request->Finish();
     }
     FCGI::CloseSocket($socket);
 }
@@ -628,6 +659,10 @@ Log all sql requests
 =item I<query>
 
 Log all http(s) requests
+
+=item I<response>
+
+Log response results
 
 =back
 

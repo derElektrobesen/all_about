@@ -38,6 +38,7 @@
             'index':            'index',
             'login':            'login',
             'register':         'register',
+            'about':            'about',
 
             '*notFound':        'not_found',
         },
@@ -78,6 +79,13 @@
                     el:         '.app-login_form',
                     view_ref:   Forms.Login.View,
                     template:   'login_form',
+                },
+
+                user_info_form: {
+                    model:      new Forms.UserInfo.Model({}),
+                    el:         '.app-user_info_form',
+                    view_ref:   Forms.UserInfo.View,
+                    template:   'user_info_form',
                 },
 
                 register_form: {
@@ -122,6 +130,11 @@
             this._hide(['heading', 'general_content']);
         },
 
+        about: function () {
+            this._change_current_nav_elem('About');
+            this._hide(['user_info_form']);
+        },
+
         not_found: function () {
             this._change_current_nav_elem('');
             this._hide(['404_err']);
@@ -157,6 +170,7 @@
             general_content:    $('#src-general_content'),
             login_form:         $('#src-login_form'),
             register_form:      $('#src-register_form'),
+            user_info_form:     $('#src-user_info'),
             '404_err':          $('#src-404_err'),
         };
 

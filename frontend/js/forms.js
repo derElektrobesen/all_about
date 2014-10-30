@@ -1,5 +1,11 @@
 (function ($, Backbone, _, Template) {
 
+    function navigate_on_logged_in(data) {
+        console.log(data);
+        $(".login_tab").hide();
+        window.app.navigate("#about", true);
+    }
+
     var Login = {
         Model: Template.Model.extend({}),
         View: Template.View.extend({
@@ -21,9 +27,12 @@
                     $err.removeClass("hide");
                     $passw.val('');
                 } else {
-                    var callback = function () {
-                            $err.html("<strong>Error!</strong> Internal server error.");
-                            $err.removeClass("hide");
+                    var callback = function (data) {
+                            $passw.val('');
+                            if (data && data.responseText) try {
+                                return self.set_err_message(JSON.parse(data.responseText).error);
+                            } catch(e) { } // Internal error
+                            return self.set_err_message("Internal server error");
                         };
                     $err.addClass("hide");
                     $.ajax({
@@ -36,13 +45,7 @@
                             remember:   remember,
                         },
                         success:    function (data) {
-                            if (data.ok) {
-                                window.app.navigate("", true);
-                            } else {
-                                $err.removeClass("hide")
-                                    .html("<strong>Error!</strong> Incorrect login or password given.");
-                                $passw.focus().val('');
-                            }
+                            navigate_on_logged_in(data);
                         },
                         error:      callback,
                         statusCode: {
@@ -53,6 +56,11 @@
                 }
                 e[0].preventDefault();
                 return true;
+            },
+
+            set_err_message: function (message) {
+                var $el = this.$el.find("#login-error_message");
+                $el.html("<strong>Error!</strong>&nbsp;" + message).removeClass("hide");
             },
 
             show: function () {
@@ -97,11 +105,14 @@
                 } else {
                     var data = {},
                         self = this,
-                        callback = function () {
+                        callback = function (data) {
                             $grp_p.removeClass("has-error");
                             $grp_p_a.removeClass("has-error");
                             $edt_passw.val('');
                             $edt_passw_a.val('');
+                            if (data && data.responseText) try {
+                                return self.set_err_message(JSON.parse(data.responseText).error);
+                            } catch(e) { } // Internal error
                             return self.set_err_message("Internal server error");
                         };
                     _.keys(edits_names).forEach(function (entry) {
@@ -115,15 +126,7 @@
                         dataType:   'json',
                         data:       data,   // SSL is needed
                         success:    function (data) {
-                            if (data.ok) {
-                                window.app.navigate("", true);
-                            } else {
-                                self.set_err_message(data.err_text);
-                                $grp_p.removeClass("has-error");
-                                $grp_p_a.removeClass("has-error");
-                                $edt_passw.val('');
-                                $edt_passw_a.val('');
-                            }
+                            navigate_on_logged_in(data);
                         },
                         error:      callback,
                         statusCode: {
@@ -148,9 +151,45 @@
         }),
     };
 
+    var UserInfo = {
+        Model: Template.Model.extend({
+            defaults: {
+                logged_in:          false,
+                username:           undefined,
+                email:              undefined,
+                name:               undefined,
+                surname:            undefined,
+                lastname:           undefined,
+            },
+        }),
+
+        View: Template.View.extend({
+            init: function () {
+
+            },
+
+            render: function () {
+                this.$el.html(this.template({
+                    logged_in:      this.model.get('logged_in'),
+                    username:       this.model.get('username'),
+                    email:          this.model.get('email'),
+                    name:           this.model.get('name'),
+                    surname:        this.model.get('surname'),
+                    lastname:       this.model.get('lastname'),
+                }));
+            },
+
+            show: function () {
+                this.render();
+                this.$el.removeClass("hide");
+            },
+        }),
+    };
+
     window.Forms = {
         Login: Login,
         Register: Register,
+        UserInfo: UserInfo,
     };
 
 }) (jQuery, Backbone, _, window.Template);

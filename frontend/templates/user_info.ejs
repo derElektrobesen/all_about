@@ -1,0 +1,27 @@
+<script type='text/template' id='src-user_info'>
+<form class="form-horizontal">
+<fieldset>
+
+<!-- Form Name -->
+<legend>User informaition</legend>
+
+<% if (logged_in) { %>
+
+<div class="table-responsive">
+  <table class="table table-striped">
+    <tr><td>Login:</td><td><%= username %></td></tr>
+    <tr><td>Email:</td><td><%= email %></td></tr>
+    <tr><td>Name:</td><td><%= name %></td></tr>
+    <tr><td>Surname:</td><td><%= surname %></td></tr>
+    <tr><td>Lastname:</td><td><%= lastname %></td></tr>
+  </table>
+</div>
+
+<% } else { %>
+
+<h2>Need to <a href="#login">login</a></h2>
+
+<% } %>
+
+<div class="pre-footer"></div>
+</script>
