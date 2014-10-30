@@ -53,7 +53,6 @@ sub update_default_global_parametrs {
         server_name         => $srv_name,
         sock_path           => "/var/run/$srv_name.sock",
         pid_path            => "/var/run/$srv_name.pid",
-        stderr_to_syslog    => 0,
         extra_sql_log       => 1,
         need_root           => 1,
         n_processes         => 4,
@@ -190,11 +189,12 @@ sub sql_exec {
 
 sub get_request_params {
     my $query = shift;
+    my $env = shift;
     my %result;
 
-    if (defined $ENV{QUERY_STRING}) {
-        if ($ENV{QUERY_STRING} =~ /=/) {
-            my(@pairs) = split(/[&;]/, $ENV{QUERY_STRING});
+    if (defined $env->{QUERY_STRING}) {
+        if ($env->{QUERY_STRING} =~ /=/) {
+            my(@pairs) = split(/[&;]/, $env->{QUERY_STRING});
             my($param, $value);
             for (@pairs) {
                 ($param, $value) = split '=', $_, 2;
@@ -280,7 +280,7 @@ sub create_session {
 sub create_session_cookie {
     my %params = @_;
 
-    my %cookie_params = ( -secure => 1 );
+    my %cookie_params = ( -secure => 0 );
     if ($params{save_session}) {
         $cookie_params{'-expires'} = '+30d';
     }
@@ -490,13 +490,13 @@ sub init {
         $sub->($msg);
     };
 
-    tie *STDERR, 'ErrHandler', \&log_errors if $global_parametrs{stderr_to_syslog};
+    tie *STDERR, 'ErrHandler', \&log_errors;
 
     openlog($global_parametrs{server_name}, "ndelay,pid,cons", LOG_USER);
 
+    pm_manage( n_processes => $global_parametrs{n_processes} );
     my $request = FCGI::Request(\*STDIN, \*STDOUT, \*STDERR, \%ENV, $socket, FCGI::FAIL_ACCEPT_ON_INTR)
         or die "Can't create request: $!\n";
-    pm_manage( n_processes => $global_parametrs{n_processes} );
 
     reopen_std if $global_parametrs{daemonize};
 
@@ -510,13 +510,15 @@ sub init {
         my $query = CGI->new;
         my ($status, $data, $ref, $cookie) = ('not_found', undef, undef, undef);
 
-        if ($ref = $actions{$ENV{SCRIPT_NAME}}) {
-            my $params = get_request_params $query;
+        my $env = $request->GetEnvironment();
+
+        if ($ref = $actions{$env->{SCRIPT_NAME}}) {
+            my $params = get_request_params $query, $env;
             my $flag = 1;
 
             if (defined $global_parametrs{log_params}->{query}) {
                 my $query_str = "Request: ";
-                $query_str .= join ', ', map { "[$_: $ENV{$_}]" } qw( SCRIPT_NAME ); # for debug features
+                $query_str .= join ', ', map { "[$_: $env->{$_}]" } qw( SCRIPT_NAME ); # for debug features
 
                 # TODO: Mask 'password' request field
                 $query_str .= " [REQUEST_PARAMS: " . join(', ', map { "{ $_: $params->{$_} }" } keys %$params) . ']';
@@ -538,7 +540,7 @@ sub init {
                 }
             }
         } else {
-            _warn("Requested script not found on server: '$ENV{SCRIPT_NAME}'");
+            _warn("Requested script not found on server: '$env->{SCRIPT_NAME}'");
         }
 
         unless (defined $http_codes{$status}) {
@@ -554,12 +556,18 @@ sub init {
             -expires => '+30d',
             -cookie => $cookie,
             -charset => 'utf-8',
+            -access_control_allow_origin => '*',
+            -access_control_allow_headers => 'content-type,X-Requested-With',
+            -access_control_allow_methods => 'GET,POST,OPTIONS',
+            -access_control_allow_credentials => 'true',
         );
 
         print $data if defined $data;
 
-        pm_post_dispatch();
+        $request->Flush();
         $request->Finish();
+        $request->LastCall(); # XXX: REMOVE ME
+        pm_post_dispatch();
     }
     FCGI::CloseSocket($socket);
 }

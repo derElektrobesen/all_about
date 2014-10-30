@@ -1,8 +1,16 @@
 (function ($, Backbone, _, Template) {
 
+    var user_info_model_ptr = undefined;
     function navigate_on_logged_in(data) {
-        console.log(data);
         $(".login_tab").hide();
+        user_info_model_ptr.set({
+            logged_in: true,
+            username: data.login,
+            email: data.email,
+            name: data.name,
+            surname: data.surname,
+            lastname: data.lastname,
+        });
         window.app.navigate("#about", true);
     }
 
@@ -27,10 +35,11 @@
                     $err.removeClass("hide");
                     $passw.val('');
                 } else {
-                    var callback = function (data) {
+                    var self = this,
+                        callback = function (data) {
                             $passw.val('');
                             if (data && data.responseText) try {
-                                return self.set_err_message(JSON.parse(data.responseText).error);
+                                return self.set_err_message("Incorrect username or password");
                             } catch(e) { } // Internal error
                             return self.set_err_message("Internal server error");
                         };
@@ -51,6 +60,9 @@
                         statusCode: {
                             404:    callback,
                             400:    callback,
+                        },
+                        xhrFields: {
+                            withCredentials: true
                         },
                     });
                 }
@@ -161,13 +173,13 @@
                 surname:            undefined,
                 lastname:           undefined,
             },
+
+            initialize: function () {
+                user_info_model_ptr = this;
+            },
         }),
 
         View: Template.View.extend({
-            init: function () {
-
-            },
-
             render: function () {
                 this.$el.html(this.template({
                     logged_in:      this.model.get('logged_in'),
