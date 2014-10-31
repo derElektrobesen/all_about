@@ -156,26 +156,37 @@ my %content_types = (
 );
 
 my %actions = (
-    '/cgi-bin/login.cgi'        => {
+    '/cgi-bin/login.cgi'            => {
         sub_ref         => \&login,
         content_type    => 'json',
         required_fields => [qw( login passw remember )],
         need_login      => 0,
     },
-    '/cgi-bin/register.cgi'     => {
+    '/cgi-bin/register.cgi'         => {
         sub_ref         => \&register,
         content_type    => 'json',
         required_fields => [qw( username email name passw )],
         need_login      => 0,
     },
-    '/cgi-bin/get_user_info.cgi' => {
+    '/cgi-bin/get_user_info.cgi'    => {
         sub_ref         => \&get_info_about_user,
         content_type    => 'json',
         need_login      => 1,
     },
-    '/cgi-bin/logout.cgi'       => {
+    '/cgi-bin/logout.cgi'           => {
         sub_ref         => \&logout,
         need_login      => 1,
+    },
+    '/cgi-bin/send_msg.cgi'         => {
+        sub_ref         => \&send_msg,
+        need_login      => 1,
+        content_type    => 'json',
+        required_fields => [qw( msg to )],
+    },
+    '/cgi-bin/check_messages.cgi'   => {
+        sub_ref         => \&check_messages,
+        need_login      => 1,
+        content_type    => 'json',
     },
 );
 
@@ -384,6 +395,77 @@ sub login {
     return $status, $cookie, to_json $data;
 }
 
+sub send_msg {
+    my ($query, $params, $dbh) = @_;
+
+    sub ret_err { return 'ok', undef, to_json { err_test => shift }; }
+
+    unless (length $params->{msg}) {
+        return ret_err 'Message is too short';
+    }
+
+    if (length($params->{msg}) > 255) {
+        return ret_err 'Message is to long (maximum length is 255 symbols)';
+    }
+
+    my ($sth, $count) = sql_exec($dbh, "select id from users where username = ?", $params->{to});
+    unless ($count) {
+        return ret_err 'Destination user was not found';
+    }
+
+    my $dest_uid = $sth->fetchrow_arrayref()->[0];
+    $sth->finish;
+
+    if ($dest_uid == $params->{'-uid'}) {
+        return ret_err "You can't send message to yourself";
+    }
+
+    sql_exec($dbh, "insert into messages(message, id_from, id_to) values (?, ?, ?)",
+        $params->{msg}, $params->{'-uid'}, $dest_uid);
+
+    return 'ok';
+}
+
+sub check_messages {
+    my ($query, $params, $dbh) = @_;
+
+    my $req = <<'END';
+select
+    m.id,
+    m.message,
+    m.time,
+    m.read,
+    u_from.username,
+    u_to.username,
+    u_from.username = ?
+from messages m
+join users u_from on u_from.id = m.id_from
+join users u_to on u_to.id = m.id_to
+where (m.id_from = ? or m.id_to = ?) and m.id > ?
+order by m.id
+END
+
+    my ($sth, $count) = sql_exec($dbh, $req,
+        $params->{'-uid'}, $params->{'-uid'}, $params->{'-uid'}, $params->{last_id} || 0);
+
+    my $last_id = -1;
+    my @data;
+    my $tmp = {};
+    while ((my $l_id,
+            $tmp->{msg},
+            $tmp->{time},
+            $tmp->{read},
+            $tmp->{from},
+            $tmp->{to},
+            $tmp->{from_me}) = $sth->fetchrow_array) {
+        push @data, $tmp;
+        $tmp = {};
+        $last_id = $l_id;
+    }
+
+    return 'ok', undef, to_json { data => \@data, last_id => $last_id };
+};
+
 sub register {
     my ($query, $params, $dbh) = @_;
     my $err_ref;
@@ -437,9 +519,12 @@ sub prepare_sth {
     my $dbh = shift;
     my $sth_ref = $sql_queries{$query};
     my $sth = $sth_ref->{sth};
+
+    $query =~ s/\s+/ /mg;
+    _log(1, "Preparing sql query '$query'") if $global_parametrs{log_params}->{sql};
+    _log(1, "Sql params: [" . join(', ', @_) . "]") if $global_parametrs{extra_sql_log};
+
     unless ($sth) {
-        _log(1, "Preparing sql query '$query'") if $global_parametrs{log_params}->{sql};
-        _log(1, "Sql params: [" . join(', ', @_) . "]") if $global_parametrs{extra_sql_log};
         $sth = $dbh->prepare($query);
         $sth_ref->{sth} = $sth;
     }
@@ -595,34 +680,36 @@ sub init {
 
             if ($flag) {
                 ($status, $cookie, $data) = $ref->{sub_ref}->($query, $params, $dbh);
-                if (defined $global_parametrs{log_params}->{response}) {
-                    _log(1, "Response: [Status: $http_codes{$status}], [Data: $data]");
-                }
             }
+
+            unless (defined $http_codes{$status}) {
+                _err("Unknown http code key found: '$status'");
+                $status = 'err';
+                $ref = $data = undef;
+            }
+
+            if (defined $global_parametrs{log_params}->{response}) {
+                _log(1, "Response: [Status: $http_codes{$status}], [Data: " . ($data || "") . "]");
+            }
+
+            print CGI::header(
+                -type => $content_types{$ref->{content_type}},
+                -nph => 1,
+                -status => $http_codes{$status},
+                -expires => '+30d',
+                -cookie => $cookie,
+                -charset => 'utf-8',
+                -access_control_allow_origin => '*',
+                -access_control_allow_headers => 'content-type,X-Requested-With',
+                -access_control_allow_methods => 'GET,POST,OPTIONS',
+                -access_control_allow_credentials => 'true',
+            );
+
+            print $data if defined $data;
         } else {
             _warn("Requested script not found on server: '$env->{SCRIPT_NAME}'");
+            print CGI::header( -status => $http_codes{not_found} );
         }
-
-        unless (defined $http_codes{$status}) {
-            _err("Unknown http code key found: '$status'");
-            $status = 'err';
-            $ref = $data = undef;
-        }
-
-        print CGI::header(
-            -type => $content_types{$ref->{content_type}},
-            -nph => 1,
-            -status => $http_codes{$status},
-            -expires => '+30d',
-            -cookie => $cookie,
-            -charset => 'utf-8',
-            -access_control_allow_origin => '*',
-            -access_control_allow_headers => 'content-type,X-Requested-With',
-            -access_control_allow_methods => 'GET,POST,OPTIONS',
-            -access_control_allow_credentials => 'true',
-        );
-
-        print $data if defined $data;
 
         $request->Flush();
         $request->Finish();
