@@ -2,15 +2,17 @@
 
     var user_info_model_ptr = undefined;
     function navigate_on_logged_in(data, dont_redirect) {
-        $(".login_tab").hide();
-        user_info_model_ptr.set({
-            logged_in: true,
-            username: data.login,
-            email: data.email,
-            name: data.name,
-            surname: data.surname,
-            lastname: data.lastname,
-        });
+        window.Forms.ShowTabs(true);
+        if (data) {
+            user_info_model_ptr.set({
+                logged_in: true,
+                username: data.login,
+                email: data.email,
+                name: data.name,
+                surname: data.surname,
+                lastname: data.lastname,
+            }, { silent: true });
+        }
         if (!dont_redirect)
             window.app.navigate("#about", true);
     }
@@ -173,14 +175,22 @@
                 name:               undefined,
                 surname:            undefined,
                 lastname:           undefined,
+                dummy:              0,
             },
 
             initialize: function () {
                 user_info_model_ptr = this;
+            },
+
+            get_user_info: function () {
+                this.set({ logged_in: false }, { silent: true });
                 $.ajax({
                     url:            '/cgi-bin/get_user_info.cgi',
                     success:        function (data) {
                         navigate_on_logged_in(data, true);
+                    },
+                    error:          function () {
+                        window.Forms.ShowTabs(false);
                     },
                 });
             },
@@ -189,6 +199,7 @@
         View: Template.View.extend({
             init: function () {
                 this.$el.on('click', '#btn_logout', this.logout);
+                this.model.get_user_info();
             },
 
             render: function () {
@@ -213,6 +224,7 @@
                     url:            '/cgi-bin/logout.cgi',
                     success:        function () {
                         $(".login_tab").show();
+                        $(".logged_in").hide();
                         window.app.navigate("#", true);
                         user_info_model_ptr.set({
                             logged_in:          false,
@@ -228,10 +240,67 @@
         }),
     };
 
+    var Messages = {
+        Model: Template.Model.extend({
+            defaults: {
+            },
+
+            initialize: function () {
+                this._logged_in = false;
+                this._messages_loaded = false;
+            },
+
+            load_messages: function () {
+                this._messages_loaded = true;
+                $.ajax({
+                    url:            '/cgi-bin/check_messages.cgi',
+                    success:        function (data) {
+                        console.log(data);
+                        this._logged_in = true;
+                    },
+                });
+            },
+
+            is_logged_in: function () {
+                if (!this._messages_loaded)
+                    this.load_messages();
+                return this._logged_in;
+            },
+        }),
+
+        View: Template.View.extend({
+            init: function () {
+            },
+
+            render: function () {
+                this.$el.html(this.template({
+                    logged_in: this.model.is_logged_in(),
+                }));
+                if (this.model.is_logged_in())
+                    this.$el.removeClass("hide");
+                else
+                    this.$el.addClass("hide");
+            },
+
+            show: function () {
+                this.model.load_messages();
+                this.render();
+            },
+        }),
+    };
+
     window.Forms = {
         Login: Login,
         Register: Register,
         UserInfo: UserInfo,
+        Messages: Messages,
+
+        ShowTabs: function (logged_in) {
+            var to_show = logged_in ? ".logged_in" : ".login_tab",
+                to_hide = logged_in ? ".login_tab" : ".logged_in";
+            $(to_hide).hide();
+            $(to_show).show();
+        },
     };
 
 }) (jQuery, Backbone, _, window.Template);

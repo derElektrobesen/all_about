@@ -40,6 +40,7 @@
     <!--# include file="templates/login.ejs" -->
     <!--# include file="templates/register.ejs" -->
     <!--# include file="templates/user_info.ejs" -->
+    <!--# include file="templates/messages.ejs" -->
     <!--# include file="templates/404.ejs" -->
 
     <div class="container">
@@ -47,8 +48,9 @@
             <ul class="nav nav-pills pull-right" id="main_menu">
                 <li class="active"><a href="#">Home</a></li>
                 <li><a href="#about">About</a></li>
-                <li class="login_tab"><a href="#login">Login</a></li>
-                <li class="login_tab"><a href="#register">Register</a></li>
+                <li class="login_tab" style="display: none"><a href="#login">Login</a></li>
+                <li class="login_tab" style="display: none"><a href="#register">Register</a></li>
+                <li class="logged_in" style="display: none"><a href="#messages">Messages</a></li>
             </ul>
             <h3 class="text-muted">All About</h3>
         </div>
@@ -58,6 +60,7 @@
         <div class="app-login_form hide"></div>
         <div class="app-user_info_form hide"></div>
         <div class="app-register_form hide"></div>
+        <div class="app-messages_form hide"></div>
         <div class="app-404_err hide"></div>
 
         <div class="footer">

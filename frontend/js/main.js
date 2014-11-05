@@ -39,6 +39,7 @@
             'login':            'login',
             'register':         'register',
             'about':            'about',
+            'messages':         'messages',
 
             '*notFound':        'not_found',
         },
@@ -88,6 +89,13 @@
                     template:   'user_info_form',
                 },
 
+                messages_form: {
+                    model:      new Forms.Messages.Model({}),
+                    el:         '.app-messages',
+                    view_ref:   Forms.Messages.View,
+                    template:   'messages_form',
+                },
+
                 register_form: {
                     model:      new Forms.Register.Model({}),
                     el:         '.app-register_form',
@@ -135,6 +143,11 @@
             this._hide(['user_info_form']);
         },
 
+        messages: function () {
+            this._change_current_nav_elem('Messages');
+            this._hide(['messages_form']);
+        },
+
         not_found: function () {
             this._change_current_nav_elem('');
             this._hide(['404_err']);
@@ -171,6 +184,7 @@
             login_form:         $('#src-login_form'),
             register_form:      $('#src-register_form'),
             user_info_form:     $('#src-user_info'),
+            messages_form:      $('#src-messages'),
             '404_err':          $('#src-404_err'),
         };
 
