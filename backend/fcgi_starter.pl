@@ -423,7 +423,7 @@ sub send_msg {
     sql_exec($dbh, "insert into messages(message, id_from, id_to) values (?, ?, ?)",
         $params->{msg}, $params->{'-uid'}, $dest_uid);
 
-    return 'ok';
+    return 'ok', undef, to_json { 'ok' => 1 };
 }
 
 sub check_messages {
@@ -437,7 +437,7 @@ select
     m.read,
     u_from.username,
     u_to.username,
-    u_from.username = ?
+    u_from.id = ?
 from messages m
 join users u_from on u_from.id = m.id_from
 join users u_to on u_to.id = m.id_to
@@ -463,7 +463,10 @@ END
         $last_id = $l_id;
     }
 
-    return 'ok', undef, to_json { data => \@data, last_id => $last_id };
+    ($sth, undef) = sql_exec($dbh, "select username from users where id != ? order by username", $params->{"-uid"});
+
+    return 'ok', undef, to_json { data => \@data, last_id => $last_id,
+        users => [ map { $_->[0] } @{$sth->fetchall_arrayref()} ] };
 };
 
 sub register {

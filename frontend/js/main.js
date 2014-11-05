@@ -91,7 +91,7 @@
 
                 messages_form: {
                     model:      new Forms.Messages.Model({}),
-                    el:         '.app-messages',
+                    el:         '.app-messages_form',
                     view_ref:   Forms.Messages.View,
                     template:   'messages_form',
                 },

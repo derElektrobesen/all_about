@@ -11,7 +11,7 @@
                 name: data.name,
                 surname: data.surname,
                 lastname: data.lastname,
-            }, { silent: true });
+            });
         }
         if (!dont_redirect)
             window.app.navigate("#about", true);
@@ -175,7 +175,6 @@
                 name:               undefined,
                 surname:            undefined,
                 lastname:           undefined,
-                dummy:              0,
             },
 
             initialize: function () {
@@ -215,7 +214,7 @@
 
             show: function () {
                 this.render();
-                this.$el.removeClass("hide");
+                this.$el.removeClass('hide');
             },
 
             logout: function () {
@@ -243,6 +242,9 @@
     var Messages = {
         Model: Template.Model.extend({
             defaults: {
+                messages:         undefined,
+                users:            undefined,
+                logged_in:        false,
             },
 
             initialize: function () {
@@ -250,41 +252,80 @@
                 this._messages_loaded = false;
             },
 
-            load_messages: function () {
+            load_messages: function (callback) {
+                var self = this;
                 this._messages_loaded = true;
                 $.ajax({
                     url:            '/cgi-bin/check_messages.cgi',
                     success:        function (data) {
-                        console.log(data);
-                        this._logged_in = true;
+                        self._logged_in = true;
+                        self.set({ messages: data.data, users: data.users });
+                        if (callback)
+                            callback(true);
+                    },
+                    error:          function () {
+                        if (callback)
+                            callback(false);
                     },
                 });
             },
 
-            is_logged_in: function () {
+            is_logged_in: function (callback) {
+                var self = this;
                 if (!this._messages_loaded)
-                    this.load_messages();
-                return this._logged_in;
+                    this.load_messages(callback);
+                else
+                    callback(this._logged_in);
+            },
+
+            send_message: function (msg, to) {
+                var self = this;
+                $.ajax({
+                    url:            '/cgi-bin/send_msg.cgi',
+                    data:           {
+                        'msg': msg,
+                        'to': to,
+                    },
+                    success:        function () {
+                                        console.log("He;;o");
+                        self.load_messages();
+                    },
+                });
             },
         }),
 
         View: Template.View.extend({
             init: function () {
+                var self = this;
+                this.$el.on('click', '#btn-send_message', function (e) { self.send_message(e, this); });
             },
 
             render: function () {
-                this.$el.html(this.template({
-                    logged_in: this.model.is_logged_in(),
-                }));
-                if (this.model.is_logged_in())
-                    this.$el.removeClass("hide");
-                else
-                    this.$el.addClass("hide");
+                var $el = this.$el,
+                    self = this;
+                this.model.is_logged_in(function (logged_in) {
+                    console.log($el);
+                    if (logged_in)
+                        $el.removeClass("hide");
+                    else
+                        $el.addClass("hide");
+                    $el.html(self.template({
+                        logged_in:      logged_in,
+                        messages:       self.model.get("messages"),
+                        users:          self.model.get("users"),
+                    }));
+                });
             },
 
             show: function () {
                 this.model.load_messages();
                 this.render();
+            },
+
+            send_message: function (e, btn) {
+                var $edt = this.$el.find("#edt-message");
+                this.model.send_message($edt.val(), this.$el.find("#sel-user").val());
+                $edt.val("");
             },
         }),
     };
