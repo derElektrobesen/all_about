@@ -5,3 +5,12 @@
 .pre-footer {
     height: 30px;
 }
+
+.users-select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    border-top-left-radius: 4px !important;
+    border-bottom-left-radius: 4px !important;
+    cursor:  pointer;
+}

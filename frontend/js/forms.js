@@ -244,6 +244,7 @@
             defaults: {
                 messages:         undefined,
                 users:            undefined,
+                current_user:     undefined,
                 logged_in:        false,
             },
 
@@ -252,14 +253,14 @@
                 this._messages_loaded = false;
             },
 
-            load_messages: function (callback) {
+            load_messages: function (callback, cur_user) {
                 var self = this;
                 this._messages_loaded = true;
                 $.ajax({
                     url:            '/cgi-bin/check_messages.cgi',
                     success:        function (data) {
                         self._logged_in = true;
-                        self.set({ messages: data.data, users: data.users });
+                        self.set({ messages: data.data, users: data.users, current_user: cur_user });
                         if (callback)
                             callback(true);
                     },
@@ -274,8 +275,9 @@
                 var self = this;
                 if (!this._messages_loaded)
                     this.load_messages(callback);
-                else
+                else if (callback)
                     callback(this._logged_in);
+                return this._logged_in;
             },
 
             send_message: function (msg, to) {
@@ -287,8 +289,7 @@
                         'to': to,
                     },
                     success:        function () {
-                                        console.log("He;;o");
-                        self.load_messages();
+                        self.load_messages(undefined, to);
                     },
                 });
             },
@@ -296,6 +297,7 @@
 
         View: Template.View.extend({
             init: function () {
+                this._timer = -1;
                 var self = this;
                 this.$el.on('click', '#btn-send_message', function (e) { self.send_message(e, this); });
             },
@@ -304,7 +306,6 @@
                 var $el = this.$el,
                     self = this;
                 this.model.is_logged_in(function (logged_in) {
-                    console.log($el);
                     if (logged_in)
                         $el.removeClass("hide");
                     else
@@ -313,19 +314,44 @@
                         logged_in:      logged_in,
                         messages:       self.model.get("messages"),
                         users:          self.model.get("users"),
+                        current_user:   self.model.get("current_user"),
                     }));
                 });
             },
 
+            hide: function () {
+                if (this._timer != -1)
+                    clearInterval(this._timer);
+                this._timer = -1;
+                this.$el.addClass("hide");
+            },
+
             show: function () {
-                this.model.load_messages();
+                var self = this,
+                    callback = function () {
+                        if (self.model.is_logged_in() && self._timer == -1)
+                            self._timer = setInterval(function () { self.model.load_messages(); }, 5000);
+                    };
+                this.model.load_messages(callback);
                 this.render();
             },
 
             send_message: function (e, btn) {
-                var $edt = this.$el.find("#edt-message");
-                this.model.send_message($edt.val(), this.$el.find("#sel-user").val());
-                $edt.val("");
+                var $edt = this.$el.find("#edt-message"),
+                    msg = $edt.val(),
+                    to = this.$el.find("#sel-user").val(),
+                    $err = this.$el.find("#sendmsg-error_message");
+                if (to == "Select user") { // TODO: Set a constant
+                    $err.html("<strong>Error!</strong> User is not selected.");
+                    $err.show();
+                    return;
+                }
+
+                $err.hide();
+                if (msg.length) {
+                    this.model.send_message(msg, to);
+                    $edt.val("");
+                }
             },
         }),
     };

@@ -716,7 +716,7 @@ sub init {
 
         $request->Flush();
         $request->Finish();
-        $request->LastCall(); # XXX: REMOVE ME
+        #$request->LastCall(); # XXX: REMOVE ME
         pm_post_dispatch();
     }
     FCGI::CloseSocket($socket);

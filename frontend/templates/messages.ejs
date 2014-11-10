@@ -6,8 +6,6 @@
 <legend>Messages</legend>
 <br>
 
-    <% console.log(messages); %>
-
 <% if (logged_in) { messages.map(function (message) { %>
     <div class="row">
         <% var p_type = "success";
@@ -28,22 +26,25 @@
         </div>
     </div>
 <% }); %>
-    <div class="col-md-1"><span>To:</span></div>
-    <div class="col-md-3">
-        <select class="form-control" id="sel-user">
-            <% users.map(function (user) { %>
-                <option><%= user %></option>
-            <% }); %>
-        </select>
-    </div>
-    <div class="col-md-8">
+        <div class="alert alert-warning" id="sendmsg-error_message" style="display: none;">
+            <strong>Error!</strong> Incorrect login or password given.
+        </div>
         <div class="input-group">
+            <span class="input-group-btn" style="width: 100px">
+                <select class="form-control users-select" id="sel-user">
+                    <% if (!current_user) { %>
+                        <option selected="true" style="display:none;">Select user</option>
+                    <% } %>
+                    <% users.map(function (user) { %>
+                        <option <%= user == current_user ? 'selected="true"' : '' %>><%= user %></option>
+                    <% }); %>
+                </select>
+            </span>
             <input type="text" class="form-control" id="edt-message">
             <span class="input-group-btn">
                 <button class="btn btn-default" type="button" id="btn-send_message">Send</button>
             </span>
         </div>
-    </div>
 <br><br>
 <% } %>
 </fieldset>
