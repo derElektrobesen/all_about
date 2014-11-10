@@ -188,6 +188,16 @@ my %actions = (
         need_login      => 1,
         content_type    => 'json',
     },
+    '/cgi-bin/oauth_request_auth_token.cgi'     => {
+        sub_ref         => \&request_oauth_auth_token,
+        content_type    => 'json',
+        required_fields => [qw( response_type client_id )],
+    },
+    '/cgi-bin/oauth_request_access_token.cgi'   => {
+        sub_ref         => \&request_oauth_access_token,
+        content_type    => 'json',
+        required_fields => [qw( grant_type code redirect_uri client_id )],
+    },
 );
 
 my %http_codes = (
@@ -329,6 +339,44 @@ sub get_user_info {
         ($r{login}, $r{name}, $r{surname}, $r{lastname}, $r{email}) = $sth->fetchrow_array();
     }
     return %r;
+}
+
+sub request_oauth_auth_token {
+    my ($query, $params, $dbh) = @_;
+
+    my %data = ();
+    if (uc($params->{response_type}) ne 'CODE') {
+        %data = ( error => 'invalid_request', error_description => 'unknown response_type found' );
+    }
+
+    my ($sth, $count) = sql_exec($dbh, "select id from oauth_clients where value = ?", $params->{client_id});
+    unless ($sth) {
+        %data = ( error => 'invalid_client', error_description => 'malformed client_id' );
+    }
+
+    return 'bad_request', undef, to_json \%data if scalar keys %data;
+
+    my ($client_id) = $sth->fetchrow_array();
+    $sth->finish();
+
+    _log(3, "Request token for '%s' client_id [$client_id]", $params->{client_id}, $client_id);
+
+    my $key = md5_hex("$client_id" . time . rand 100500);
+    (undef, $count) = sql_exec($dbh, "insert into tokens(type, token, client_id, redir_url) " .
+        "values ('auth_token', ?, ?, ?)", $key, $client_id, $params->{redirect_uri} || "");
+
+    return 'err', undef, to_json { error => 'unknown_error', error_description => 'internal error' } unless $count;
+
+    my $state = defined $params->{state} ? "&state=$params->{state}" : "";
+    my $redir_url = "https://$global_parametrs{server_name}/login?code=>$key$state";
+    _log(5, "Redirecting on $redir_url");
+
+    print $query->redirect( -uri => $redir_url, -status => '302 Found', );
+    return undef;
+}
+
+sub request_oauth_access_token {
+
 }
 
 sub get_info_about_user {
@@ -666,6 +714,7 @@ sub init {
                 unless (defined $params->{$_}) {
                     _warn("Required field '$_' not found in request params");
                     $status = 'bad_request';
+                    $data = to_json {error => 'invalid_request', error_desription => "param $_ is required"};
                     $flag = 0;
                     last;
                 }
@@ -685,28 +734,32 @@ sub init {
                 ($status, $cookie, $data) = $ref->{sub_ref}->($query, $params, $dbh);
             }
 
-            unless (defined $http_codes{$status}) {
+            if (defined $status && not defined $http_codes{$status}) {
                 _err("Unknown http code key found: '$status'");
                 $status = 'err';
                 $ref = $data = undef;
             }
 
-            if (defined $global_parametrs{log_params}->{response}) {
+            if (defined $status && defined $global_parametrs{log_params}->{response}) {
                 _log(1, "Response: [Status: $http_codes{$status}], [Data: " . ($data || "") . "]");
             }
 
-            print CGI::header(
-                -type => $content_types{$ref->{content_type}},
-                -nph => 1,
-                -status => $http_codes{$status},
-                -expires => '+30d',
-                -cookie => $cookie,
-                -charset => 'utf-8',
-                -access_control_allow_origin => '*',
-                -access_control_allow_headers => 'content-type,X-Requested-With',
-                -access_control_allow_methods => 'GET,POST,OPTIONS',
-                -access_control_allow_credentials => 'true',
-            );
+            if (not defined $status) {
+                # Redirect must be sent in process-function
+            } else {
+                print CGI::header(
+                    -type => $content_types{$ref->{content_type}},
+                    -nph => 1,
+                    -status => $http_codes{$status},
+                    -expires => '+30d',
+                    -cookie => $cookie,
+                    -charset => 'utf-8',
+                    -access_control_allow_origin => '*',
+                    -access_control_allow_headers => 'content-type,X-Requested-With',
+                    -access_control_allow_methods => 'GET,POST,OPTIONS',
+                    -access_control_allow_credentials => 'true',
+                );
+            }
 
             print $data if defined $data;
         } else {
@@ -716,7 +769,7 @@ sub init {
 
         $request->Flush();
         $request->Finish();
-        #$request->LastCall(); # XXX: REMOVE ME
+        $request->LastCall(); # XXX: REMOVE ME
         pm_post_dispatch();
     }
     FCGI::CloseSocket($socket);
