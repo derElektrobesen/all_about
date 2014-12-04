@@ -70,6 +70,7 @@ sub update_default_global_parametrs {
         max_queries         => 30,
         session_expire_time => 30 * 24 * 60 * 60,   # 30 days in seconds
         auth_token_expire_time => 10 * 60,          # 10 minutes
+        access_token_expire_time => 24 * 60 * 60,   # 24 hours
         log_params          => {},
         default_response_headers => {
             -accept => '*',
@@ -393,18 +394,22 @@ sub request_oauth_auth_token {
 sub request_oauth_access_token {
     my ($query, $params, $dbh) = @_;
 
-    my ($sth, $count) = sql_exec($dbh, "select UNIX_TIMESTAMP(time), redir_url from tokens where token = ?", $params->{code});
+    my ($sth, $count) = sql_exec($dbh, "select UNIX_TIMESTAMP(time), redir_url, client_id from tokens where token = ?", $params->{code});
 
     return 'unauthorized', undef, to_json {
         error => 'access_denied',
         error_description => 'invalid auth token'
     } unless $count;
 
-    my ($time, $url) = $sth->fetchrow_array();
+    my ($time, $url, $client_id) = $sth->fetchrow_array();
     $sth->finish();
 
-    if ($time + $global_parametrs{auth_token_expire_time} <= time()) {
+    my $drop_token = sub {
         sql_exec($dbh, 'delete from tokens where token = ?', $params->{code});
+    };
+
+    if ($time + $global_parametrs{auth_token_expire_time} <= time()) {
+        $drop_token->();
         return 'unauthorized', undef, to_json {
             error => 'access_denied',
             error_description => 'auth token expired'
@@ -428,7 +433,27 @@ sub request_oauth_access_token {
     my $uid = real_login($dbh, $user, $pass);
     return 'unauthorized' if $uid == -1;
 
-    return 'ok';
+    $drop_token->();
+
+    my $key = md5_hex("$client_id$params->{code}" . time . rand 100500);
+    my $refresh_key = md5_hex("$params->{code}$client_id" . time . rand 100500);
+    (undef, $count) = sql_exec($dbh, "insert into tokens(type, token, user_id, client_id) " .
+        "values ('access_token', ?, ?, ?), ('refresh_token', ?, ?, ?)", $key, $uid, $client_id, $refresh_key, $uid, $client_id);
+
+    return 'err', undef, to_json { error => 'unknown_error', error_description => 'internal error' } unless $count;
+
+    my $response_data = {
+        token_type => 'basic',
+        access_token => $key,
+        expires_in => $global_parametrs{access_token_expire_time},
+        refresh_token => $refresh_key,
+    };
+
+    if ($url) {
+        $response_data->{redirect_to} = $url;
+    }
+
+    return 'ok', undef, to_json $response_data;
 }
 
 sub get_info_about_user {

@@ -65,16 +65,14 @@
                         var data = $.param({ code: auth_code, grant_type: 'authorization_code' });
                         $.extend(general_login, {
                             url:        'https://oauth.allabout/request_access_token?' + data,
-                            method:     'OPTIONS',
+                            method:     'GET',
                             headers: {
                                 'Authorization': 'Basic ' + btoa(login + ':' + passw),
                             },
-                            beforeSend: function (xhr) {
-                                xhr.withCredentials = true;
-                                xhr.setRequestHeader('Authorization', 'Basic ' + btoa(login + ':' + passw));
-                            },
                             success: function (data) {
-                                warn(data);
+                                if (data['redirect_to']) {
+                                    $(location).attr('href', data['redirect_to'] + "?" + $.param(data));
+                                }
                             },
                         });
                     } else {
