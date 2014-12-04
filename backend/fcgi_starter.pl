@@ -37,6 +37,8 @@ use CGI::Fast;
 use FCGI::ProcManager qw( pm_manage pm_pre_dispatch pm_post_dispatch );
 use Digest::MD5 qw( md5_hex );
 
+use MIME::Base64;
+
 use DBI;
 use POSIX;
 use JSON;
@@ -66,8 +68,17 @@ sub update_default_global_parametrs {
         db_port             => '3306',
         log_level           => 1,
         max_queries         => 30,
-        session_expire_time => 30 * 24 * 60 * 60, # 30 days in seconds
+        session_expire_time => 30 * 24 * 60 * 60,   # 30 days in seconds
+        auth_token_expire_time => 10 * 60,          # 10 minutes
         log_params          => {},
+        default_response_headers => {
+            -accept => '*',
+            -charset => 'utf-8',
+            -access_control_allow_origin => 'https://allabout',
+            -access_control_allow_headers => 'Content-Type, X-Requested-With, Authorization',
+            -access_control_allow_methods => 'GET,POST,OPTIONS',
+            -access_control_allow_credentials => 'true',
+        },
         @_,
     );
 }
@@ -196,7 +207,7 @@ my %actions = (
     '/cgi-bin/oauth_request_access_token.cgi'   => {
         sub_ref         => \&request_oauth_access_token,
         content_type    => 'json',
-        required_fields => [qw( grant_type code redirect_uri client_id )],
+        required_fields => [qw( grant_type code )],
     },
 );
 
@@ -350,7 +361,7 @@ sub request_oauth_auth_token {
     }
 
     my ($sth, $count) = sql_exec($dbh, "select id from oauth_clients where value = ?", $params->{client_id});
-    unless ($sth) {
+    unless ($count) {
         %data = ( error => 'invalid_client', error_description => 'malformed client_id' );
     }
 
@@ -368,15 +379,56 @@ sub request_oauth_auth_token {
     return 'err', undef, to_json { error => 'unknown_error', error_description => 'internal error' } unless $count;
 
     my $state = defined $params->{state} ? "&state=$params->{state}" : "";
-    my $redir_url = "https://$global_parametrs{server_name}/login?code=>$key$state";
+    my $redir_url = "https://$global_parametrs{server_name}/login?code=$key$state";
     _log(5, "Redirecting on $redir_url");
 
-    print $query->redirect( -uri => $redir_url, -status => '302 Found', );
+    print $query->redirect(
+        -uri => $redir_url,
+        -status => '302 Found',
+        %{$global_parametrs{default_response_headers}},
+    );
     return undef;
 }
 
 sub request_oauth_access_token {
+    my ($query, $params, $dbh) = @_;
 
+    my ($sth, $count) = sql_exec($dbh, "select UNIX_TIMESTAMP(time), redir_url from tokens where token = ?", $params->{code});
+
+    return 'unauthorized', undef, to_json {
+        error => 'access_denied',
+        error_description => 'invalid auth token'
+    } unless $count;
+
+    my ($time, $url) = $sth->fetchrow_array();
+    $sth->finish();
+
+    if ($time + $global_parametrs{auth_token_expire_time} <= time()) {
+        sql_exec($dbh, 'delete from tokens where token = ?', $params->{code});
+        return 'unauthorized', undef, to_json {
+            error => 'access_denied',
+            error_description => 'auth token expired'
+        } unless $count;
+    }
+
+    my $is_preflight_request = $query->http('Access-Control-Request-Headers');
+
+    if (defined $is_preflight_request) {
+        return 'ok'; # Request will be sent again automatically by browser
+    }
+
+    my $auth_header_data = $query->http('Authorization');
+
+    $auth_header_data =~ s/Basic //i;
+    my $decoded_credentials = decode_base64($auth_header_data);
+
+    $decoded_credentials =~ /([^:]+):(.+)/;
+    my ($user, $pass) = ($1, $2);
+
+    my $uid = real_login($dbh, $user, $pass);
+    return 'unauthorized' if $uid == -1;
+
+    return 'ok';
 }
 
 sub get_info_about_user {
@@ -412,6 +464,20 @@ sub logout {
     return ('ok', create_session_cookie);
 }
 
+sub real_login {
+    my ($dbh, $login, $pass) = @_;
+
+    my ($sth, $count) = sql_exec($dbh, 'select id from users where username = ? and password = MD5(?)', $login, $pass);
+
+    my $uid = -1;
+    if ($count) {
+        $uid = $sth->fetchrow_arrayref()->[0];
+    }
+
+    $sth->finish();
+    return $uid;
+}
+
 sub login {
     my ($query, $params, $dbh) = @_;
 
@@ -429,17 +495,13 @@ sub login {
     my $status = 'unauthorized';
     my $data = {};
 
-    my ($sth, $count) = sql_exec($dbh, 'select id from users where username = ? and password = MD5(?)', $params->{login}, $params->{passw});
-
+    my $uid = real_login($dbh, $params->{login}, $params->{passw});
     my $cookie = create_session_cookie(save_session => $params->{remember});
 
-    if ($count) {
-        my $uid = $sth->fetchrow_arrayref()->[0];
+    if ($uid >= 0) {
         ($cookie, $data) = fetch_user_info($uid, $dbh, $query, $params->{remember});
         $status = 'ok' if scalar %$data;
     }
-
-    $sth->finish;
     return $status, $cookie, to_json $data;
 }
 
@@ -531,7 +593,8 @@ sub register {
     for (qw( username passw name surname lastname email )) {
         return $ret_err->($_, 'field is empty') unless length $params->{$_};
     }
-    return $ret_err->('username', 'spaces found') if $params->{username} =~ /\s/;
+    return $ret_err->('username', 'spaces are prohibited') if $params->{username} =~ /\s/;
+    return $ret_err->('username', "':' character is prohibited") if $params->{username} =~ /:/;
     return $ret_err->('email') unless $params->{email} =~ /^[\w.\d]+@[\w.\d]+$/; # TODO: Fix email mask
 
     $dbh->begin_work;
@@ -753,11 +816,7 @@ sub init {
                     -status => $http_codes{$status},
                     -expires => '+30d',
                     -cookie => $cookie,
-                    -charset => 'utf-8',
-                    -access_control_allow_origin => '*',
-                    -access_control_allow_headers => 'content-type,X-Requested-With',
-                    -access_control_allow_methods => 'GET,POST,OPTIONS',
-                    -access_control_allow_credentials => 'true',
+                    %{$global_parametrs{default_response_headers}},
                 );
             }
 

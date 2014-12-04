@@ -47,18 +47,9 @@
                             return self.set_err_message("Internal server error");
                         };
                     $err.addClass("hide");
-                    $.ajax({
-                        url:        '/cgi-bin/login.cgi',
+                    var general_login = {
                         method:     'POST',
                         dataType:   'json',
-                        data:       {
-                            login:      login,
-                            passw:      passw,      // SSL is needed
-                            remember:   remember,
-                        },
-                        success:    function (data) {
-                            navigate_on_logged_in(data);
-                        },
                         error:      callback,
                         statusCode: {
                             404:    callback,
@@ -67,7 +58,43 @@
                         xhrFields: {
                             withCredentials: true
                         },
-                    });
+                    };
+
+                    var auth_code = $.urlParam('code');
+                    if (auth_code != null) {
+                        var data = $.param({ code: auth_code, grant_type: 'authorization_code' });
+                        $.extend(general_login, {
+                            url:        'https://oauth.allabout/request_access_token?' + data,
+                            method:     'OPTIONS',
+                            headers: {
+                                'Authorization': 'Basic ' + btoa(login + ':' + passw),
+                            },
+                            beforeSend: function (xhr) {
+                                xhr.withCredentials = true;
+                                xhr.setRequestHeader('Authorization', 'Basic ' + btoa(login + ':' + passw));
+                            },
+                            success: function (data) {
+                                warn(data);
+                            },
+                        });
+                    } else {
+                        $.extend(general_login, {
+                            url:        '/cgi-bin/login.cgi',
+                            headers: {
+                                'Access-Control-Allow-Origin': '*',
+                            },
+                            data:       {
+                                login:      login,
+                                passw:      passw,      // SSL is needed
+                                remember:   remember,
+                            },
+                            success:    function (data) {
+                                navigate_on_logged_in(data);
+                            },
+                        });
+                    }
+                    console.log(general_login);
+                    $.ajax(general_login);
                 }
                 e[0].preventDefault();
                 return true;
@@ -198,7 +225,7 @@
         View: Template.View.extend({
             init: function () {
                 this.$el.on('click', '#btn_logout', this.logout);
-                this.model.get_user_info();
+                //this.model.get_user_info();
             },
 
             render: function () {
