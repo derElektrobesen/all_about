@@ -18,6 +18,25 @@
         if (access_token)
             window.request_data.access_token = access_token;
 
+        $("#btn-refresh_token").on("click", function () {
+            if (!window.request_data.access_token) {
+                alert("Press 'Request token' button");
+                return;
+            }
+            $.ajax({
+                method: 'GET',
+                url: 'https://oauth.allabout/refresh_auth_token',
+                data: {
+                    refresh_token: window.request_data.refresh_token,
+                    grant_type: 'refresh_token',
+                },
+                success: function (data) {
+                    window.request_data.access_token = data.access_token;
+                    alert("Success!");
+                },
+            });
+        });
+
         $("#btn-request_data").on("click", function () {
             if (!window.request_data.access_token) {
                 alert("Press 'Request token' button");

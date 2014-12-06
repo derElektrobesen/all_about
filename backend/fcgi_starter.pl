@@ -68,11 +68,12 @@ sub update_default_global_parametrs {
         db_port             => '3306',
         log_level           => 1,
         max_queries         => 30,
-        session_expire_time => 30 * 24 * 60 * 60,   # 30 days in seconds
-        auth_token_expire_time => 10 * 60,          # 10 minutes
-        access_token_expire_time => 24 * 60 * 60,   # 24 hours
+        session_expire_time => 30 * 24 * 60 * 60,           # 30 days
+        auth_token_expire_time      => 10 * 60,             # 10 minutes
+        access_token_expire_time    => 24 * 60 * 60,        # 24 hours
+        refresh_token_expire_time   => 30 * 24 * 60 * 60,   # 30 days
         log_params          => {},
-        accept_origin       => [qw(https://allabout http://test_allabout)],
+        accept_origin       => [],
         @_,
     );
 }
@@ -93,6 +94,8 @@ sub read_config {
 
         log_level    => 'scalar',
         log_params   => 'lmap',
+
+        accept_origin=> 'list',
     );
 
     die "Can't open '$cfg_path': not found\n" unless -f $cfg_path;
@@ -464,6 +467,28 @@ sub request_oauth_access_token {
 
 sub refresh_oauth_token {
     my ($query, $params, $dbh) = @_; # TODO
+    my ($sth, $count) = sql_exec($dbh, "select type, UNIX_TIMESTAMP(time), user_id, client_id from tokens where token = ?",
+        $params->{refresh_token});
+
+    return 'unauthorized' unless $count;
+
+    my ($type, $time, $uid, $cl_id) = $sth->fetchrow_array();
+
+    return 'unauthorized' unless $type eq 'refresh_token';
+
+    if ($time + $global_parametrs{refresh_token_expire_time} < time) {
+        _log(1, "Refresh token $params->{refresh_token} is expired");
+        sql_exec($dbh, "delete from tokens where user_id = ? and client_id = ?", $uid, $cl_id);
+        return 'unauthorized';
+    }
+
+    sql_exec($dbh, "delete from tokens where where user_id = ? and type = 'refresh_token' and cl_id = ?", $uid, $cl_id);
+    my $access_key = md5_hex("$params->{refresh_token}$cl_id" . time . rand 100500);
+
+    sql_exec($dbh, "insert into tokens(type, token, user_id, client_id) values ('access_token', ?, ?, ?)",
+        $access_key, $uid, $cl_id);
+
+    return 'ok', undef, to_json { access_token => $access_key };
 }
 
 sub get_info_about_user {
