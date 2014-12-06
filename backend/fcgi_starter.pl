@@ -72,14 +72,7 @@ sub update_default_global_parametrs {
         auth_token_expire_time => 10 * 60,          # 10 minutes
         access_token_expire_time => 24 * 60 * 60,   # 24 hours
         log_params          => {},
-        default_response_headers => {
-            -accept => '*',
-            -charset => 'utf-8',
-            -access_control_allow_origin => 'https://allabout',
-            -access_control_allow_headers => 'Content-Type, X-Requested-With, Authorization',
-            -access_control_allow_methods => 'GET,POST,OPTIONS',
-            -access_control_allow_credentials => 'true',
-        },
+        accept_origin       => [qw(https://allabout http://test_allabout)],
         @_,
     );
 }
@@ -210,10 +203,16 @@ my %actions = (
         content_type    => 'json',
         required_fields => [qw( grant_type code )],
     },
+    '/cgi-bin/oauth_refresh_auth_token.cgi' => {
+        sub_ref         => \&refresh_oauth_token,
+        content_type    => 'json',
+        required_fields => [qw( grant_type refresh_token )],
+    },
 );
 
 my %http_codes = (
     'ok'                => '200 Ok',
+    'found'             => '302 Found',
     'err'               => '500 Internal Error',
     'bad_request'       => '400 Bad Request',
     'unauthorized'      => '401 Unauthorized',
@@ -383,12 +382,7 @@ sub request_oauth_auth_token {
     my $redir_url = "https://$global_parametrs{server_name}/login?code=$key$state";
     _log(5, "Redirecting on $redir_url");
 
-    print $query->redirect(
-        -uri => $redir_url,
-        -status => '302 Found',
-        %{$global_parametrs{default_response_headers}},
-    );
-    return undef;
+    return 'ok', undef, to_json { redirect_to => $redir_url };
 }
 
 sub request_oauth_access_token {
@@ -414,12 +408,6 @@ sub request_oauth_access_token {
             error => 'access_denied',
             error_description => 'auth token expired'
         } unless $count;
-    }
-
-    my $is_preflight_request = $query->http('Access-Control-Request-Headers');
-
-    if (defined $is_preflight_request) {
-        return 'ok'; # Request will be sent again automatically by browser
     }
 
     my $auth_header_data = $query->http('Authorization');
@@ -454,6 +442,10 @@ sub request_oauth_access_token {
     }
 
     return 'ok', undef, to_json $response_data;
+}
+
+sub refresh_oauth_token {
+    my ($query, $params, $dbh) = @_; # TODO
 }
 
 sub get_info_about_user {
@@ -818,8 +810,27 @@ sub init {
                 }
             }
 
+            my $request_origin = $query->http('Origin');
+            if ($request_origin) {
+                unless (grep { $request_origin eq lc } @{$global_parametrs{accept_origin}}) {
+                    # Origin is not accepted
+                    warn("Origin '$request_origin' is not allowed");
+                    $status = "unauthorized";
+                    $flag = 0;
+                    $request_origin = undef;
+                } elsif (my $need_return = $query->http('Access-Control-Request-Headers')) {
+                    # Preflight request came: need return 200 & wait new request
+                    $flag = 0;
+                    $status = 'ok';
+                }
+            } else {
+                $request_origin = undef;
+            }
+
+            my $extra_headers = {};
             if ($flag) {
-                ($status, $cookie, $data) = $ref->{sub_ref}->($query, $params, $dbh);
+                ($status, $cookie, $data, $extra_headers) = $ref->{sub_ref}->($query, $params, $dbh);
+                $extra_headers = {} unless defined $extra_headers;
             }
 
             if (defined $status && not defined $http_codes{$status}) {
@@ -832,20 +843,24 @@ sub init {
                 _log(1, "Response: [Status: $http_codes{$status}], [Data: " . ($data || "") . "]");
             }
 
-            if (not defined $status) {
-                # Redirect must be sent in process-function
-            } else {
-                print CGI::header(
-                    -type => $content_types{$ref->{content_type}},
-                    -nph => 1,
-                    -status => $http_codes{$status},
-                    -expires => '+30d',
-                    -cookie => $cookie,
-                    %{$global_parametrs{default_response_headers}},
-                );
-            }
+            my $response = CGI::header(
+                -type => $content_types{$ref->{content_type}},
+                -nph => 1,
+                -status => $http_codes{$status},
+                -expires => '+30d',
+                -cookie => $cookie,
+                -access_control_allow_origin => $request_origin,
+                -accept => '*',
+                -charset => 'utf-8',
+                -access_control_allow_headers => 'Content-Type, X-Requested-With, Authorization, Access-Control-Expose-Headers',
+                -access_control_allow_methods => 'GET,POST,OPTIONS',
+                -access_control_allow_credentials => 'true',
+                %{$global_parametrs{default_response_headers}},
+                %{$extra_headers},
+            );
 
-            print $data if defined $data;
+            $data = '' unless defined $data;
+            print "$response$data";
         } else {
             _warn("Requested script not found on server: '$env->{SCRIPT_NAME}'");
             print CGI::header( -status => $http_codes{not_found} );

@@ -4,10 +4,10 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Oauth labs test server">
+    <meta name="description" content="allabout test server">
     <meta name="author" content="Pavel Berejnoy, pberejnoy2005@gmail.com">
 
-    <title>Oauth test server</title>
+    <title>Allabout test server</title>
 
     <link href="css/bootstrap.min.css" rel="stylesheet">
     <link href="css/jumbotron-narrow.css" rel="stylesheet">
@@ -28,40 +28,23 @@
     <script src="js/lib/underscore-min.js"></script>
     <script src="js/lib/backbone-min.js"></script>
 
-    <script src="js/templates.js"></script>
+    <script src="js/main.js"></script>
+    <!--
     <script src="js/forms.js"></script>
     <script src="js/main.js"></script>
+    --!>
   </head>
 
   <body>
 
-    <!--# include file="templates/heading.ejs" -->
-    <!--# include file="templates/content.ejs" -->
-    <!--# include file="templates/login.ejs" -->
-    <!--# include file="templates/register.ejs" -->
-    <!--# include file="templates/user_info.ejs" -->
-    <!--# include file="templates/messages.ejs" -->
-    <!--# include file="templates/404.ejs" -->
-
     <div class="container">
         <div class="header">
-            <ul class="nav nav-pills pull-right" id="main_menu">
-                <li class="active"><a href="#">Home</a></li>
-                <li><a href="#about">About</a></li>
-                <li class="login_tab" style="display: none"><a href="#login">Login</a></li>
-                <li class="login_tab" style="display: none"><a href="#register">Register</a></li>
-                <li class="logged_in" style="display: none"><a href="#messages">Messages</a></li>
-            </ul>
-            <h3 class="text-muted">All About</h3>
+            <h3 class="text-muted">OAuth 2.0 test server</h3>
         </div>
 
-        <div class="jumbotron app-heading hide"></div>
-        <div class="row marketing app-content hide"></div>
-        <div class="app-login_form hide"></div>
-        <div class="app-user_info_form hide"></div>
-        <div class="app-register_form hide"></div>
-        <div class="app-messages_form hide"></div>
-        <div class="app-404_err hide"></div>
+        <div>
+            <button type="button" class="btn btn-success" id="btn-request_tokens">Request tokens</button>
+        </div>
 
         <div class="footer">
             <p>&copy; Company 2014</p>
