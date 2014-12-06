@@ -31,7 +31,11 @@
                 },
                 success: function (data) {
                     var $container = $('#private_data_container');
-                    $container.text(data);
+                    $container.text(JSON.stringify(data));
+                },
+                error: function () {
+                    var $container = $('#private_data_container');
+                    $container.text('');
                 },
             });
         });

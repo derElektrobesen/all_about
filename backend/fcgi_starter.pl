@@ -394,7 +394,7 @@ sub check_access_token {
     return undef unless $token_type eq 'access_token';
 
     if ($create_time + $global_parametrs{access_token_expire_time} < time) {
-        _log("Token $access_token is expired");
+        _log(1, "Token $access_token is expired");
         drop_token($dbh, $access_token);
         return undef;
     }
