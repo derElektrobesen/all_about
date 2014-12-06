@@ -29,10 +29,6 @@
     <script src="js/lib/backbone-min.js"></script>
 
     <script src="js/main.js"></script>
-    <!--
-    <script src="js/forms.js"></script>
-    <script src="js/main.js"></script>
-    --!>
   </head>
 
   <body>
@@ -42,9 +38,20 @@
             <h3 class="text-muted">OAuth 2.0 test server</h3>
         </div>
 
-        <div>
-            <button type="button" class="btn btn-success" id="btn-request_tokens">Request tokens</button>
+        <div class="row">
+            <div class="col-md-3">
+                <button type="button" class="btn btn-success" id="btn-request_tokens">Request tokens</button><br>
+            </div>
+            <div class="col-md-3">
+                <button type="button" class="btn btn-success" id="btn-request_data">Request data</button><br>
+            </div>
+            <div class="col-md-3">
+                <button type="button" class="btn btn-success" id="btn-refresh_token">Refresh token</button><br>
+            </div>
         </div>
+        <br>
+
+        <div class="jumbotron" id="private_data_container"></div>
 
         <div class="footer">
             <p>&copy; Company 2014</p>

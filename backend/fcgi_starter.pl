@@ -385,6 +385,28 @@ sub request_oauth_auth_token {
     return 'ok', undef, to_json { redirect_to => $redir_url };
 }
 
+sub check_access_token {
+    my ($dbh, $access_token) = @_;
+    my ($sth, $count) = sql_exec($dbh, 'select type, UNIX_TIMESTAMP(time), user_id from tokens where token = ?', $access_token);
+    return undef unless $count;
+
+    my ($token_type, $create_time, $uid) = $sth->fetchrow_array();
+    return undef unless $token_type eq 'access_token';
+
+    if ($create_time + $global_parametrs{access_token_expire_time} < time) {
+        _log("Token $access_token is expired");
+        drop_token($dbh, $access_token);
+        return undef;
+    }
+
+    return { uid => $uid };
+}
+
+sub drop_token {
+    my ($dbh, $token) = @_;
+    sql_exec($dbh, 'delete from tokens where token = ?', $token);
+}
+
 sub request_oauth_access_token {
     my ($query, $params, $dbh) = @_;
 
@@ -398,12 +420,8 @@ sub request_oauth_access_token {
     my ($time, $url, $client_id) = $sth->fetchrow_array();
     $sth->finish();
 
-    my $drop_token = sub {
-        sql_exec($dbh, 'delete from tokens where token = ?', $params->{code});
-    };
-
     if ($time + $global_parametrs{auth_token_expire_time} <= time()) {
-        $drop_token->();
+        drop_token($dbh, $params->{code});
         return 'unauthorized', undef, to_json {
             error => 'access_denied',
             error_description => 'auth token expired'
@@ -421,7 +439,7 @@ sub request_oauth_access_token {
     my $uid = real_login($dbh, $user, $pass);
     return 'unauthorized' if $uid == -1;
 
-    $drop_token->();
+    drop_token($dbh, $params->{code});
 
     my $key = md5_hex("$client_id$params->{code}" . time . rand 100500);
     my $refresh_key = md5_hex("$params->{code}$client_id" . time . rand 100500);
@@ -776,12 +794,14 @@ sub init {
             my $params = get_request_params $query, $env;
             my $flag = 1;
 
+            my $access_token = $query->http('X-Lala-Access-Token');
             if (defined $global_parametrs{log_params}->{query}) {
                 my $query_str = "Request: ";
                 $query_str .= join ', ', map { "[$_: $env->{$_}]" } qw( SCRIPT_NAME ); # for debug features
 
                 # TODO: Mask 'password' request field
                 $query_str .= " [REQUEST_PARAMS: " . join(', ', map { "{ $_: $params->{$_} }" } keys %$params) . ']';
+                $query_str .= " [ACCESS_TOKEN: " . $access_token . "]" if $access_token;
                 _log(1, $query_str);
             }
 
@@ -799,7 +819,17 @@ sub init {
                     last;
                 }
             }
-            if ($flag && $ref->{need_login}) {
+
+            my $access_granted = 0;
+            if ($flag && $access_token) {
+                my $r = check_access_token($dbh, $access_token);
+                if ($r) {
+                    $access_granted = 1;
+                    $params->{'-uid'} = $r->{uid};
+                }
+            }
+
+            if (!$access_granted && $flag && $ref->{need_login}) {
                 my %r = check_session($query, $dbh);
                 if ($r{expired}) {
                     $status = "unauthorized";
@@ -852,7 +882,7 @@ sub init {
                 -access_control_allow_origin => $request_origin,
                 -accept => '*',
                 -charset => 'utf-8',
-                -access_control_allow_headers => 'Content-Type, X-Requested-With, Authorization, Access-Control-Expose-Headers',
+                -access_control_allow_headers => 'Content-Type, X-Requested-With, Authorization, X-Lala-Access-Token',
                 -access_control_allow_methods => 'GET,POST,OPTIONS',
                 -access_control_allow_credentials => 'true',
                 %{$global_parametrs{default_response_headers}},

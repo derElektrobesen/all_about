@@ -1,5 +1,40 @@
 (function ($, Backbone, _) {
+    $.urlParam = function (name) {
+        var results = new RegExp('[\?&]' + name + '=([^&#]*)').exec(window.location.href);
+        if (results == null) {
+           return null;
+        } else {
+           return results[1] || 0;
+        }
+    };
+
+    window.request_data = {};
+
     $(document).ready(function () {
+        var refresh_token = $.urlParam("refresh_token"),
+            access_token = $.urlParam("access_token");
+        if (refresh_token)
+            window.request_data.refresh_token = refresh_token;
+        if (access_token)
+            window.request_data.access_token = access_token;
+
+        $("#btn-request_data").on("click", function () {
+            if (!window.request_data.access_token) {
+                alert("Press 'Request token' button");
+                return;
+            }
+            $.ajax({
+                method: 'GET',
+                url: 'https://allabout/cgi-bin/check_messages.cgi',
+                headers: {
+                    'X-Lala-Access-Token': window.request_data.access_token,
+                },
+                success: function (data) {
+                    var $container = $('#private_data_container');
+                    $container.text(data);
+                },
+            });
+        });
         $("#btn-request_tokens").on("click", function () {
             $.ajax({
                 method: 'GET',
