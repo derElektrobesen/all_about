@@ -49,7 +49,9 @@
             'register':         'register',
             'about':            'about',
             'messages':         'messages',
+            'yammer':           'yammer',
 
+            'internal_error':   'internal_error',
             '*notFound':        'not_found',
         },
 
@@ -91,6 +93,13 @@
                     template:   'login_form',
                 },
 
+                yammer_form: {
+                    model:      new Forms.Yammer.Model({}),
+                    el:         '.app-yammer_form',
+                    view_ref:   Forms.Yammer.View,
+                    template:   'yammer_form',
+                },
+
                 user_info_form: {
                     model:      new Forms.UserInfo.Model({}),
                     el:         '.app-user_info_form',
@@ -117,6 +126,13 @@
                     el:         '.app-404_err',
                     view_ref:   Error.View,
                     template:   '404_err',
+                },
+
+                '500_err': {
+                    model:      new Error.Model({}),
+                    el:         '.app-500_err',
+                    view_ref:   Error.View,
+                    template:   '500_err',
                 },
             };
         },
@@ -157,9 +173,19 @@
             this._hide(['messages_form']);
         },
 
+        yammer: function () {
+            this._change_current_nav_elem('Sign in with Yammer');
+            this._hide(['yammer_form']);
+        },
+
         not_found: function () {
             this._change_current_nav_elem('');
             this._hide(['404_err']);
+        },
+
+        internal_error: function () {
+            this._change_current_nav_elem('');
+            this._hide(['500_err']);
         },
 
         _hide: function (exceptions) {
@@ -194,7 +220,9 @@
             register_form:      $('#src-register_form'),
             user_info_form:     $('#src-user_info'),
             messages_form:      $('#src-messages'),
+            yammer_form:        $('#src-yammer'),
             '404_err':          $('#src-404_err'),
+            '500_err':          $('#src-500_err'),
         };
 
         window.app = new MainRouter({

@@ -41,7 +41,9 @@
     <!--# include file="templates/register.ejs" -->
     <!--# include file="templates/user_info.ejs" -->
     <!--# include file="templates/messages.ejs" -->
+    <!--# include file="templates/yammer.ejs" -->
     <!--# include file="templates/404.ejs" -->
+    <!--# include file="templates/500.ejs" -->
 
     <div class="container">
         <div class="header">
@@ -49,6 +51,7 @@
                 <li class="active"><a href="#">Home</a></li>
                 <li><a href="#about">About</a></li>
                 <li class="login_tab" style="display: none"><a href="#login">Login</a></li>
+                <li class="login_tab" style="display: none"><a href="#yammer">Sign in with Yammer</a></li>
                 <li class="login_tab" style="display: none"><a href="#register">Register</a></li>
                 <li class="logged_in" style="display: none"><a href="#messages">Messages</a></li>
             </ul>
@@ -58,10 +61,12 @@
         <div class="jumbotron app-heading hide"></div>
         <div class="row marketing app-content hide"></div>
         <div class="app-login_form hide"></div>
+        <div class="app-yammer_form hide"></div>
         <div class="app-user_info_form hide"></div>
         <div class="app-register_form hide"></div>
         <div class="app-messages_form hide"></div>
         <div class="app-404_err hide"></div>
+        <div class="app-500_err hide"></div>
 
         <div class="footer">
             <p>&copy; Company 2014</p>

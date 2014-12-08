@@ -191,6 +191,30 @@
         }),
     };
 
+    var Yammer = {
+        Model: Template.Model.extend({
+            request_access: function () {
+                $.ajax({
+                    method: 'GET',
+                    url: '/cgi-bin/yammer_auth.cgi',
+                    success: function (data) {
+                        console.log("Jello!");
+                        if (data['redirect_to']) {
+                            $(location).attr('href', data['redirect_to']);
+                        } else {
+                            alert("Already logged in");
+                        }
+                    },
+                });
+            },
+        }),
+        View: Template.View.extend({
+            show: function () {
+                this.model.request_access();
+            },
+        }),
+    };
+
     var UserInfo = {
         Model: Template.Model.extend({
             defaults: {
@@ -223,7 +247,7 @@
         View: Template.View.extend({
             init: function () {
                 this.$el.on('click', '#btn_logout', this.logout);
-                //this.model.get_user_info();
+                this.model.get_user_info();
             },
 
             render: function () {
@@ -386,6 +410,7 @@
         Register: Register,
         UserInfo: UserInfo,
         Messages: Messages,
+        Yammer: Yammer,
 
         ShowTabs: function (logged_in) {
             var to_show = logged_in ? ".logged_in" : ".login_tab",

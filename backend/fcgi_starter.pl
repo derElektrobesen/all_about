@@ -211,6 +211,13 @@ my %actions = (
         content_type    => 'json',
         required_fields => [qw( grant_type refresh_token )],
     },
+    '/cgi-bin/yammer_auth.cgi' => {
+        sub_ref         => \&yammer_auth,
+        content_type    => 'json',
+    },
+    '/cgi-bin/save_yammer_token.cgi' => {
+        sub_ref         => \&save_yammer_token,
+    },
 );
 
 my %http_codes = (
@@ -688,6 +695,65 @@ sub register {
     return $status, $cookie, to_json $data;
 }
 
+sub check_yammer_key {
+    my ($dbh, $key) = @_;
+
+    my ($sth, $count) = sql_exec($dbh, "select token from yammer_tokens where user_key = ?", $key);
+    return $count > 0;
+}
+
+sub yammer_auth {
+    my ($query, $params, $dbh) = @_;
+
+    my $key = md5_hex(time . rand 100500);
+
+    if (check_yammer_key($dbh, $query->cookie('yammer_key'))) {
+        return 'ok', undef, to_json { ok => 1 };
+    }
+
+    my $cookie = CGI::cookie(
+        -name       => 'yammer_key',
+        -value      => $key,
+    );
+
+    my (undef, $count) = sql_exec($dbh, "insert into yammer_tokens(user_key) values (?)", $key);
+
+    unless ($count) {
+        _warn("Can't insert $key user key in db");
+        return 'err';
+    }
+
+    return 'ok', $cookie, to_json({
+        redirect_to => "https://www.yammer.com/dialog/oauth?" .
+            "client_id=lm6kWM4iuMsjdsMVLeUTYg&redirect_uri=https%3A%2F%2Fallabout%2Foauth_result%3Fscope%3D$key"
+    });
+}
+
+sub save_yammer_token {
+    my ($query, $params, $dbh) = @_;
+
+    return 'err' unless defined $params->{scope};
+
+    my $user_key = $params->{scope};
+
+    unless (check_yammer_key($dbh, $user_key)) {
+        _warn("Can't find scoped key $user_key from request");
+        return 'err';
+    }
+
+    my ($sth, $count) = sql_exec($dbh, "select id from yammer_tokens where user_key = ?", $user_key);
+
+    unless ($count) {
+        _warn("Scoped key $user_key not found in db");
+        return 'err';
+    }
+
+    my $id = $sth->fetchrow_arrayref()->[0];
+    sql_exec($dbh, "update yammer_tokens set token = ? where id = ?", $params->{code}, $id);
+
+    return 'found', undef, undef, { -location => '/' };
+}
+
 sub prepare_sth {
     my $query = shift;
     my $dbh = shift;
@@ -885,37 +951,40 @@ sub init {
             my $extra_headers = {};
             if ($flag) {
                 ($status, $cookie, $data, $extra_headers) = $ref->{sub_ref}->($query, $params, $dbh);
+            }
+
+            if (defined $status) {
+                # No data will be returned if status is not defined
+                unless (defined $http_codes{$status}) {
+                    _err("Unknown http code key found: '$status'");
+                    $status = 'err';
+                    $ref = $data = undef;
+                }
+
+                if (defined $global_parametrs{log_params}->{response}) {
+                    _log(1, "Response: [Status: $http_codes{$status}], [Data: " . ($data || "") . "]");
+                }
+
                 $extra_headers = {} unless defined $extra_headers;
+                my $response = CGI::header(
+                    -type => $content_types{$ref->{content_type}},
+                    -nph => 1,
+                    -status => $http_codes{$status},
+                    -expires => '+30d',
+                    -cookie => $cookie,
+                    -access_control_allow_origin => $request_origin,
+                    -accept => '*',
+                    -charset => 'utf-8',
+                    -access_control_allow_headers => 'Content-Type, X-Requested-With, Authorization, X-Lala-Access-Token',
+                    -access_control_allow_methods => 'GET,POST,OPTIONS',
+                    -access_control_allow_credentials => 'true',
+                    %{$global_parametrs{default_response_headers}},
+                    %{$extra_headers},
+                );
+
+                $data = '' unless defined $data;
+                print "$response$data";
             }
-
-            if (defined $status && not defined $http_codes{$status}) {
-                _err("Unknown http code key found: '$status'");
-                $status = 'err';
-                $ref = $data = undef;
-            }
-
-            if (defined $status && defined $global_parametrs{log_params}->{response}) {
-                _log(1, "Response: [Status: $http_codes{$status}], [Data: " . ($data || "") . "]");
-            }
-
-            my $response = CGI::header(
-                -type => $content_types{$ref->{content_type}},
-                -nph => 1,
-                -status => $http_codes{$status},
-                -expires => '+30d',
-                -cookie => $cookie,
-                -access_control_allow_origin => $request_origin,
-                -accept => '*',
-                -charset => 'utf-8',
-                -access_control_allow_headers => 'Content-Type, X-Requested-With, Authorization, X-Lala-Access-Token',
-                -access_control_allow_methods => 'GET,POST,OPTIONS',
-                -access_control_allow_credentials => 'true',
-                %{$global_parametrs{default_response_headers}},
-                %{$extra_headers},
-            );
-
-            $data = '' unless defined $data;
-            print "$response$data";
         } else {
             _warn("Requested script not found on server: '$env->{SCRIPT_NAME}'");
             print CGI::header( -status => $http_codes{not_found} );
