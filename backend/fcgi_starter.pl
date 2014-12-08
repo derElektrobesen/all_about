@@ -218,6 +218,10 @@ my %actions = (
     '/cgi-bin/save_yammer_token.cgi' => {
         sub_ref         => \&save_yammer_token,
     },
+    '/cgi-bin/get_yammer_data.cgi' => {
+        sub_ref         => \&get_yammer_data,
+        content_type    => 'json',
+    },
 );
 
 my %http_codes = (
@@ -707,9 +711,9 @@ sub yammer_auth {
 
     my $key = md5_hex(time . rand 100500);
 
-    if (check_yammer_key($dbh, $query->cookie('yammer_key'))) {
-        return 'ok', undef, to_json { ok => 1 };
-    }
+#    if (check_yammer_key($dbh, $query->cookie('yammer_key'))) {
+#        return 'ok', undef, to_json { ok => 1 };
+#    }
 
     my $cookie = CGI::cookie(
         -name       => 'yammer_key',
@@ -752,6 +756,21 @@ sub save_yammer_token {
     sql_exec($dbh, "update yammer_tokens set token = ? where id = ?", $params->{code}, $id);
 
     return 'found', undef, undef, { -location => '/' };
+}
+
+sub get_yammer_data {
+    my ($query, $params, $dbh) = @_;
+
+    unless (check_yammer_key($dbh, $query->cookie('yammer_key'))) {
+        return 'unauthorized', CGI::cookie(-name => 'yammer_key', -value => '');
+    }
+
+    my ($sth, undef) = sql_exec($dbh, "select token from yammer_tokens where user_key = ?", $query->cookie("yammer_key"));
+    my $token = $sth->fetchrow_arrayref()->[0];
+
+    return 'ok', undef, to_json {
+        redirect_to => "https://www.yammer.com/api/v1/messages/following.json?access_token=$token"
+    };
 }
 
 sub prepare_sth {

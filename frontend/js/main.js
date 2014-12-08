@@ -50,6 +50,7 @@
             'about':            'about',
             'messages':         'messages',
             'yammer':           'yammer',
+            'yammer_data':      'yammer_data',
 
             'internal_error':   'internal_error',
             '*notFound':        'not_found',
@@ -98,6 +99,13 @@
                     el:         '.app-yammer_form',
                     view_ref:   Forms.Yammer.View,
                     template:   'yammer_form',
+                },
+
+                yammer_data_form: {
+                    model:      new Forms.YammerData.Model({}),
+                    el:         '.app-yammer_data_form',
+                    view_ref:   Forms.YammerData.View,
+                    template:   'yammer_data_form',
                 },
 
                 user_info_form: {
@@ -178,6 +186,11 @@
             this._hide(['yammer_form']);
         },
 
+        yammer_data: function () {
+            this._change_current_nav_elem('Get yammer data');
+            this._hide(['yammer_data_form']);
+        },
+
         not_found: function () {
             this._change_current_nav_elem('');
             this._hide(['404_err']);
@@ -221,6 +234,7 @@
             user_info_form:     $('#src-user_info'),
             messages_form:      $('#src-messages'),
             yammer_form:        $('#src-yammer'),
+            yammer_data_form:   $('#src-yammer_data'),
             '404_err':          $('#src-404_err'),
             '500_err':          $('#src-500_err'),
         };

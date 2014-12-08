@@ -198,7 +198,6 @@
                     method: 'GET',
                     url: '/cgi-bin/yammer_auth.cgi',
                     success: function (data) {
-                        console.log("Jello!");
                         if (data['redirect_to']) {
                             $(location).attr('href', data['redirect_to']);
                         } else {
@@ -211,6 +210,36 @@
         View: Template.View.extend({
             show: function () {
                 this.model.request_access();
+            },
+        }),
+    };
+
+    var YammerData = {
+        Model: Template.Model.extend({
+            request_data: function (obj, callback) {
+                $.ajax({
+                    method: 'GET',
+                    url: '/cgi-bin/get_yammer_data.cgi',
+                    success: function (data) {
+                        if (data['redirect_to']) {
+                            callback(obj, data['redirect_to']);
+                        }
+                    },
+                error: function (xhr) {
+                    if (xhr.status === 401)
+                        alert("Need to be logged in with yammer");
+                },
+                });
+            },
+        }),
+        View: Template.View.extend({
+            render: function (self, data) {
+                self.$el.html(self.template({ src: data }));
+                self.$el.removeClass('hide');
+            },
+
+            show: function () {
+                this.model.request_data(this, this.render);
             },
         }),
     };
@@ -411,6 +440,7 @@
         UserInfo: UserInfo,
         Messages: Messages,
         Yammer: Yammer,
+        YammerData: YammerData,
 
         ShowTabs: function (logged_in) {
             var to_show = logged_in ? ".logged_in" : ".login_tab",
