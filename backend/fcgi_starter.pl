@@ -934,7 +934,13 @@ sub init {
             my $params = get_request_params $query, $env;
             my $flag = 1;
 
-            my $access_token = $query->http('X-Lala-Access-Token');
+            my $access_token = $query->http('Authorization');
+            if ($access_token =~ /^\s*Bearer\s(\w+)\s*$/i) {
+                $access_token = $1;
+            } else {
+                $access_token = undef;
+            }
+
             if (defined $global_parametrs{log_params}->{query}) {
                 my $query_str = "Request: ";
                 $query_str .= join ', ', map { "[$_: $env->{$_}]" } qw( SCRIPT_NAME ); # for debug features
@@ -1024,7 +1030,7 @@ sub init {
                     -access_control_allow_origin => $request_origin,
                     -accept => '*',
                     -charset => 'utf-8',
-                    -access_control_allow_headers => 'Content-Type, X-Requested-With, Authorization, X-Lala-Access-Token',
+                    -access_control_allow_headers => 'Content-Type, X-Requested-With, Authorization',
                     -access_control_allow_methods => 'GET,POST,OPTIONS',
                     -access_control_allow_credentials => 'true',
                     %{$global_parametrs{default_response_headers}},

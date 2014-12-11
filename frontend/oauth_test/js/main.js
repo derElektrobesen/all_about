@@ -46,7 +46,7 @@
                 method: 'GET',
                 url: 'https://allabout/cgi-bin/check_messages.cgi',
                 headers: {
-                    'X-Lala-Access-Token': window.request_data.access_token,
+                    'Authorization': "Bearer " + window.request_data.access_token,
                 },
                 success: function (data) {
                     var $container = $('#private_data_container');
