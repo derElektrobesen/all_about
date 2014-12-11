@@ -244,6 +244,22 @@
         }),
     };
 
+    var CurUserInfo = {
+        Model: Template.Model.extend({
+            defaults: {
+                logged_in:          false,
+                cur_usr:            undefined,
+            },
+
+            setUser: function (usrname) {
+                console.log(usrname);
+            },
+        }),
+        View: Template.View.extend({
+
+        }),
+    };
+
     var UserInfo = {
         Model: Template.Model.extend({
             defaults: {
@@ -438,6 +454,7 @@
         Login: Login,
         Register: Register,
         UserInfo: UserInfo,
+        CurUserInfo: CurUserInfo,
         Messages: Messages,
         Yammer: Yammer,
         YammerData: YammerData,

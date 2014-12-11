@@ -48,6 +48,7 @@
             'login':            'login',
             'register':         'register',
             'about':            'about',
+            'about_:usr':       'about_usr',
             'messages':         'messages',
             'yammer':           'yammer',
             'yammer_data':      'yammer_data',
@@ -115,6 +116,13 @@
                     template:   'user_info_form',
                 },
 
+                cur_usr_info_form: {
+                    model:      new Forms.CurUserInfo.Model({}),
+                    el:         '.app-cur_usr_info_form',
+                    view_ref:   Forms.CurUserInfo.View,
+                    template:   'cur_usr_info_form',
+                },
+
                 messages_form: {
                     model:      new Forms.Messages.Model({}),
                     el:         '.app-messages_form',
@@ -176,6 +184,12 @@
             this._hide(['user_info_form']);
         },
 
+        about_usr: function (usrname) {
+            this.models.cur_usr_info_form.model.setUser(usrname);
+            this._change_current_nav_elem('About');
+            this._hide(['cur_user_info_form']);
+        },
+
         messages: function () {
             this._change_current_nav_elem('Messages');
             this._hide(['messages_form']);
@@ -232,6 +246,7 @@
             login_form:         $('#src-login_form'),
             register_form:      $('#src-register_form'),
             user_info_form:     $('#src-user_info'),
+            cur_usr_info_form:  $('#src-cur_usr_info'),
             messages_form:      $('#src-messages'),
             yammer_form:        $('#src-yammer'),
             yammer_data_form:   $('#src-yammer_data'),

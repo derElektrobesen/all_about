@@ -6,7 +6,10 @@
 <legend>Messages</legend>
 <br>
 
-<% if (logged_in) { messages.map(function (message) { %>
+<% if (logged_in) {
+    var mk_href = function (usr) { return '<a href="#about_' + usr + '">' + usr + "</a>"; };
+    messages.map(function (message) { %>
+
     <div class="row">
         <% var p_type = "success";
            if (message.from_me == "1") {
@@ -17,7 +20,8 @@
             <div class="<%= 'panel panel-' + p_type %>">
                 <div class="panel-heading">
                     <span class="panel-title"><b>
-                        <%= message.from_me == "1" ? "To: " + message.to : "From: " + message.from %>
+                        <%= (message.from_me == "1" ? "" : "From:&nbsp;" + mk_href(message.from) + ";&nbsp;")
+                            + "To:&nbsp;" + mk_href(message.to) %>
                     </b></span>
                     <span class="pull-right">Date: <%= message.time %></span>
                 </div>

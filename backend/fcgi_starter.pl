@@ -622,12 +622,12 @@ select
 from messages m
 join users u_from on u_from.id = m.id_from
 join users u_to on u_to.id = m.id_to
-where (m.id_from = ? or m.id_to = ?) and m.id > ?
+where m.id > ?
 order by m.id
 END
 
     my ($sth, $count) = sql_exec($dbh, $req,
-        $params->{'-uid'}, $params->{'-uid'}, $params->{'-uid'}, $params->{last_id} || 0);
+        $params->{'-uid'}, $params->{last_id} || 0);
 
     my $last_id = -1;
     my @data;
@@ -711,10 +711,6 @@ sub yammer_auth {
 
     my $key = md5_hex(time . rand 100500);
 
-#    if (check_yammer_key($dbh, $query->cookie('yammer_key'))) {
-#        return 'ok', undef, to_json { ok => 1 };
-#    }
-
     my $cookie = CGI::cookie(
         -name       => 'yammer_key',
         -value      => $key,
@@ -755,7 +751,7 @@ sub save_yammer_token {
     my $id = $sth->fetchrow_arrayref()->[0];
     sql_exec($dbh, "update yammer_tokens set token = ? where id = ?", $params->{code}, $id);
 
-    return 'found', undef, undef, { -location => '/' };
+    return 'found', undef, undef, { -location => '/#yammer_data' };
 }
 
 sub get_yammer_data {
