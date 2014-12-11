@@ -176,6 +176,11 @@ my %actions = (
         required_fields => [qw( username email name passw )],
         need_login      => 0,
     },
+    '/cgi-bin/get_users_info.cgi'    => {
+        sub_ref         => \&get_info_about_all_users,
+        content_type    => 'json',
+        need_login      => 1,
+    },
     '/cgi-bin/get_user_info.cgi'    => {
         sub_ref         => \&get_info_about_user,
         required_fields => [qw( username )],
@@ -501,6 +506,28 @@ sub refresh_oauth_token {
         $access_key, $uid, $cl_id);
 
     return 'ok', undef, to_json { access_token => $access_key };
+}
+
+sub get_info_about_all_users {
+    my ($query, $params, $dbh) = @_;
+
+    my ($sth, $count) = sql_exec($dbh, 'select u.id, u.username, ui.name, ui.surname, ui.lastname, ui.email ' .
+            'from users u join users_info ui on u.id = ui.user_id order by u.username');
+
+    my $data = {};
+
+    if (!$count) {
+        $data = { error => 'No users found' };
+    }
+
+    while (my ($uid, $username, $name, $surname, $lastname, $email) = $sth->fetchrow_array()) {
+        my %me = ();
+        $me{me} = 1 if $uid == $params->{'-uid'};
+        push @{$data->{data}}, { username => $username, name => $name,
+            surname => $surname, lastname => $lastname, email => $email, %me };
+    }
+
+    return 'ok', undef, to_json $data;
 }
 
 sub get_info_about_user {

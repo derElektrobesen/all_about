@@ -1,21 +1,6 @@
 (function ($, Backbone, _, Template) {
 
     var user_info_model_ptr = undefined;
-    function navigate_on_logged_in(data, dont_redirect) {
-        window.Forms.ShowTabs(true);
-        if (data) {
-            user_info_model_ptr.set({
-                logged_in: true,
-                username: data.login,
-                email: data.email,
-                name: data.name,
-                surname: data.surname,
-                lastname: data.lastname,
-            });
-        }
-        if (!dont_redirect)
-            window.app.navigate("#about", true);
-    }
 
     var Login = {
         Model: Template.Model.extend({}),
@@ -87,7 +72,7 @@
                                 remember:   remember,
                             },
                             success:    function (data) {
-                                navigate_on_logged_in(data);
+                                user_info_model_ptr.request_data(true);
                             },
                         });
                     }
@@ -164,9 +149,9 @@
                         url:        '/cgi-bin/register.cgi',
                         method:     'POST',
                         dataType:   'json',
-                        data:       data,   // SSL is needed
+                        data:       data,
                         success:    function (data) {
-                            navigate_on_logged_in(data);
+                            user_info_model_ptr.request_data(true);
                         },
                         error:      callback,
                         statusCode: {
@@ -254,10 +239,7 @@
                 name:               undefined,
                 surname:            undefined,
                 lastname:           undefined,
-            },
-
-            initialize: function () {
-                user_info_model_ptr = this;
+                dummy:              0,
             },
 
             setUser: function (usrname) {
@@ -291,7 +273,9 @@
                         window.Forms.ShowTabs(true);
                     },
                     error:          function () {
-                        self.set({ logged_in: false });
+                        var dummy = _.random();
+                        console.log(dummy);
+                        self.set({ logged_in: false, dummy: dummy });
                         window.Forms.ShowTabs(false);
                     },
                 });
@@ -330,11 +314,6 @@
                         window.app.navigate("#", true);
                         user_info_model_ptr.set({
                             logged_in:          false,
-                            username:           undefined,
-                            email:              undefined,
-                            name:               undefined,
-                            surname:            undefined,
-                            lastname:           undefined,
                         });
                     },
                 });
@@ -346,11 +325,65 @@
         Model: Template.Model.extend({
             defaults: {
                 logged_in:          false,
-                cur_usr:            undefined,
+                data:               undefined,
+            },
+
+            initialize: function () {
+                user_info_model_ptr = this;
+                this.request_data(false);
+            },
+
+            request_data: function (make_redirect) {
+                var self = this;
+                $.ajax({
+                    url: '/cgi-bin/get_users_info.cgi',
+                    success: function (data) {
+                        self.set({ logged_in: true, data: data });
+                        window.Forms.ShowTabs(true);
+                        if (make_redirect)
+                            window.app.navigate("#about", true);
+                    },
+                    error: function () {
+                        self.set({ logged_in: false, data: undefined });
+                        window.Forms.ShowTabs(false);
+                        if (make_redirect)
+                            window.app.navigate("#about", true);
+                    },
+                });
             },
         }),
-        View: Template.View.extend({
 
+        View: Template.View.extend({
+            init: function () {
+                this.$el.on('click', '#btn_logout', this.logout);
+            },
+
+            render: function () {
+                this.$el.html(this.template({
+                    logged_in:      this.model.get('logged_in'),
+                    data:           this.model.get('data'),
+                }));
+                this.$el.removeClass('hide');
+            },
+
+            show: function () {
+                this.render();
+            },
+
+            logout: function () {
+                var self = this;
+                $.ajax({
+                    url:            '/cgi-bin/logout.cgi',
+                    success:        function () {
+                        $(".login_tab").show();
+                        $(".logged_in").hide();
+                        window.app.navigate("#", true);
+                        self.model.set({
+                            logged_in:          false,
+                        });
+                    },
+                });
+            },
         }),
     };
 
