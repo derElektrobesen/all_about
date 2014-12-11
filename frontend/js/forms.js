@@ -248,22 +248,7 @@
         Model: Template.Model.extend({
             defaults: {
                 logged_in:          false,
-                cur_usr:            undefined,
-            },
-
-            setUser: function (usrname) {
-                console.log(usrname);
-            },
-        }),
-        View: Template.View.extend({
-
-        }),
-    };
-
-    var UserInfo = {
-        Model: Template.Model.extend({
-            defaults: {
-                logged_in:          false,
+                error:              undefined,
                 username:           undefined,
                 email:              undefined,
                 name:               undefined,
@@ -275,14 +260,38 @@
                 user_info_model_ptr = this;
             },
 
-            get_user_info: function () {
+            setUser: function (usrname) {
+                this.get_user_info(usrname);
+            },
+
+            get_user_info: function (usrname) {
+                var self = this;
                 this.set({ logged_in: false }, { silent: true });
                 $.ajax({
                     url:            '/cgi-bin/get_user_info.cgi',
+                    data: {
+                        username:    usrname,
+                    },
                     success:        function (data) {
-                        navigate_on_logged_in(data, true);
+                        if (data.error) {
+                            self.set({
+                                logged_in: true,
+                                error: data.error,
+                            });
+                        } else {
+                            self.set({
+                                logged_in: true,
+                                username: data.login,
+                                email: data.email,
+                                name: data.name,
+                                surname: data.surname,
+                                lastname: data.lastname,
+                            });
+                        }
+                        window.Forms.ShowTabs(true);
                     },
                     error:          function () {
+                        self.set({ logged_in: false });
                         window.Forms.ShowTabs(false);
                     },
                 });
@@ -292,7 +301,6 @@
         View: Template.View.extend({
             init: function () {
                 this.$el.on('click', '#btn_logout', this.logout);
-                this.model.get_user_info();
             },
 
             render: function () {
@@ -303,12 +311,13 @@
                     name:           this.model.get('name'),
                     surname:        this.model.get('surname'),
                     lastname:       this.model.get('lastname'),
+                    error:          this.model.get('error'),
                 }));
+                this.$el.removeClass('hide');
             },
 
             show: function () {
                 this.render();
-                this.$el.removeClass('hide');
             },
 
             logout: function () {
@@ -330,6 +339,18 @@
                     },
                 });
             },
+        }),
+    };
+
+    var UserInfo = {
+        Model: Template.Model.extend({
+            defaults: {
+                logged_in:          false,
+                cur_usr:            undefined,
+            },
+        }),
+        View: Template.View.extend({
+
         }),
     };
 

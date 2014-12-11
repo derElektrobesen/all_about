@@ -178,6 +178,7 @@ my %actions = (
     },
     '/cgi-bin/get_user_info.cgi'    => {
         sub_ref         => \&get_info_about_user,
+        required_fields => [qw( username )],
         content_type    => 'json',
         need_login      => 1,
     },
@@ -504,7 +505,13 @@ sub refresh_oauth_token {
 
 sub get_info_about_user {
     my ($query, $params, $dbh) = @_;
-    my %data = get_user_info($params->{'-uid'}, $dbh);
+    my ($sth, $count) = sql_exec($dbh, "select id from users where username = ?", $params->{username});
+    unless ($count) {
+        return 'ok', undef, to_json { error => "User $params->{username} not found" };
+    }
+
+    my $uid = $sth->fetchrow_arrayref()->[0];
+    my %data = get_user_info($uid, $dbh);
     return 'ok', undef, to_json \%data;
 }
 
