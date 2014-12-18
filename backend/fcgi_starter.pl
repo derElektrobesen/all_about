@@ -42,6 +42,10 @@ use MIME::Base64;
 use DBI;
 use POSIX;
 use JSON;
+use JSON::Parse qw(parse_json);
+use HTTP::Request;
+
+use LWP::UserAgent;
 
 our $VERSION = '1.0';
 sub HELP_MESSAGE() { pod2usage(1) and exit 0; }
@@ -782,10 +786,20 @@ sub save_yammer_token {
         return 'err';
     }
 
-    my $id = $sth->fetchrow_arrayref()->[0];
-    sql_exec($dbh, "update yammer_tokens set token = ? where id = ?", $params->{code}, $id);
+    my $ua = LWP::UserAgent->new;
+    my $response = $ua->get('https://www.yammer.com/oauth2/access_token.json?client_id=lm6kWM4iuMsjdsMVLeUTYg&' .
+            "client_secret=HjcePE2pGrUOVgn57ZfD70fo1KcvT03DrCFxVPqYA&code=$params->{code}");
 
-    return 'found', undef, undef, { -location => '/#yammer_data' };
+    if ($response->is_success) {
+        $response = parse_json($response->decoded_content);
+
+        my $id = $sth->fetchrow_arrayref()->[0];
+        sql_exec($dbh, "update yammer_tokens set token = ? where id = ?", $response->{access_token}->{token}, $id);
+
+        return 'found', undef, undef, { -location => '/#yammer_data' };
+    }
+
+    return 'err';
 }
 
 sub get_yammer_data {
@@ -798,9 +812,18 @@ sub get_yammer_data {
     my ($sth, undef) = sql_exec($dbh, "select token from yammer_tokens where user_key = ?", $query->cookie("yammer_key"));
     my $token = $sth->fetchrow_arrayref()->[0];
 
-    return 'ok', undef, to_json {
-        redirect_to => "https://www.yammer.com/api/v1/messages/following.json?access_token=$token"
-    };
+
+    my $ua = LWP::UserAgent->new;
+    my $req = HTTP::Request->new('GET' => "https://www.yammer.com/api/v1/messages/following.json");
+    $req->header('Authorization' => "Bearer $token");
+
+    my $response = $ua->request($req);
+
+    if ($response->is_success) {
+        return 'ok', undef, $response->decoded_content;
+    }
+
+    return 'err';
 }
 
 sub prepare_sth {

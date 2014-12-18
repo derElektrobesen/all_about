@@ -206,9 +206,7 @@
                     method: 'GET',
                     url: '/cgi-bin/get_yammer_data.cgi',
                     success: function (data) {
-                        if (data['redirect_to']) {
-                            callback(obj, data['redirect_to']);
-                        }
+                        callback(obj, data);
                     },
                 error: function (xhr) {
                     if (xhr.status === 401)
