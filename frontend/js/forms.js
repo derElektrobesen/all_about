@@ -45,18 +45,18 @@
                         },
                     };
 
-                    var auth_code = $.urlParam('code');
+                    var auth_code = $.urlParam('oauth');
                     if (auth_code != null) {
-                        var data = $.param({ code: auth_code, grant_type: 'authorization_code' });
+                        var data = $.param({ client_id: $.urlParam('client_id'), grant_type: 'password' });
                         $.extend(general_login, {
-                            url:        'https://oauth.allabout/request_access_token?' + data,
+                            url:        'https://oauth.allabout/oauth_login?' + data,
                             method:     'GET',
                             headers: {
                                 'Authorization': 'Basic ' + btoa(login + ':' + passw),
                             },
                             success: function (data) {
                                 if (data['redirect_to']) {
-                                    $(location).attr('href', data['redirect_to'] + "?" + $.param(data));
+                                    $(location).attr('href', data['redirect_to']);
                                 }
                             },
                         });

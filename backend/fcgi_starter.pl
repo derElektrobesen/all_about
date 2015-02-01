@@ -78,6 +78,7 @@ sub update_default_global_parametrs {
         refresh_token_expire_time   => 30 * 24 * 60 * 60,   # 30 days
         log_params          => {},
         accept_origin       => [],
+        login_page          => '',
         @_,
     );
 }
@@ -98,6 +99,8 @@ sub read_config {
 
         log_level    => 'scalar',
         log_params   => 'lmap',
+
+        login_page   => 'scalar',
 
         accept_origin=> 'list',
     );
@@ -208,8 +211,18 @@ my %actions = (
     },
     '/cgi-bin/oauth_request_auth_token.cgi'     => {
         sub_ref         => \&request_oauth_auth_token,
+        content_type    => 'html',
+        required_fields => [qw( response_type client_id redirect_uri )],
+    },
+    '/cgi-bin/oauth_oauth_login.cgi'   => {
+        sub_ref         => \&oauth_try_login,
         content_type    => 'json',
-        required_fields => [qw( response_type client_id )],
+        required_fields => [qw( grant_type client_id )],
+    },
+    '/cgi-bin/oauth_verify_token.cgi'  => {
+        sub_ref         => \&oauth_verify_token,
+        content_type    => 'json',
+        required_fields => [qw( client_id grant_type code redirect_uri client_secret )],
     },
     '/cgi-bin/oauth_request_access_token.cgi'   => {
         sub_ref         => \&request_oauth_access_token,
@@ -219,7 +232,7 @@ my %actions = (
     '/cgi-bin/oauth_refresh_auth_token.cgi' => {
         sub_ref         => \&refresh_oauth_token,
         content_type    => 'json',
-        required_fields => [qw( grant_type refresh_token )],
+        required_fields => [qw( grant_type refresh_token client_secret )],
     },
     '/cgi-bin/yammer_auth.cgi' => {
         sub_ref         => \&yammer_auth,
@@ -381,32 +394,43 @@ sub request_oauth_auth_token {
 
     my %data = ();
     if (uc($params->{response_type}) ne 'CODE') {
-        %data = ( error => 'invalid_request', error_description => 'unknown response_type found' );
+        %data = ( error => 'invalid request', error_description => 'unknown response_type found' );
     }
 
-    my ($sth, $count) = sql_exec($dbh, "select id from oauth_clients where value = ?", $params->{client_id});
+    my ($sth, $count) = sql_exec($dbh, "select id, redirect_uri from oauth_clients where value = ?", $params->{client_id});
     unless ($count) {
-        %data = ( error => 'invalid_client', error_description => 'malformed client_id' );
+        %data = ( error => 'invalid client', error_description => 'malformed client_id' );
     }
 
-    return 'bad_request', undef, to_json \%data if scalar keys %data;
+    my $content = "<html><head><h1>Error: %s</h1></head><body>%s</body></html>";
 
-    my ($client_id) = $sth->fetchrow_array();
+    return 'bad_request', undef, sprintf($content, $data{error}, $data{error_description}) if scalar keys %data;
+
+    my ($client_id, $redir_uri) = $sth->fetchrow_array();
     $sth->finish();
+
+    if ($redir_uri ne $params->{redirect_uri}) {
+        return 'unauthorized', undef, sprintf($content, 'access denied', 'invalid redirect uri');
+    }
 
     _log(3, "Request token for '%s' client_id [$client_id]", $params->{client_id}, $client_id);
 
     my $key = md5_hex("$client_id" . time . rand 100500);
-    (undef, $count) = sql_exec($dbh, "insert into tokens(type, token, client_id, redir_url) " .
-        "values ('auth_token', ?, ?, ?)", $key, $client_id, $params->{redirect_uri} || "");
+    (undef, $count) = sql_exec($dbh, "insert into tokens(type, token, client_id, redir_url, state) " .
+        "values ('auth_token', ?, ?, ?, ?)", $key, $client_id, $params->{redirect_uri} || "", $params->{state} || "");
 
-    return 'err', undef, to_json { error => 'unknown_error', error_description => 'internal error' } unless $count;
+    return 'err', undef, sprintf($content, 'internal error', 'database error') unless $count;
 
     my $state = defined $params->{state} ? "&state=$params->{state}" : "";
-    my $redir_url = "https://$global_parametrs{server_name}/login?code=$key$state";
-    _log(5, "Redirecting on $redir_url");
+    my $redir_url = "https://$global_parametrs{server_name}/login?oauth=true&client_id=$key";
+    _log(5, "Auth key = $key");
 
-    return 'ok', undef, to_json { redirect_to => $redir_url };
+    open my $f, '<', $global_parametrs{login_page} or _warn("Can't open login page: '$global_parametrs{login_page}'");
+    local $/ = undef;
+
+    $content = <$f>;
+    $content = sprintf $content, $key;
+    return 'ok', undef, $content;
 }
 
 sub check_access_token {
@@ -429,6 +453,112 @@ sub check_access_token {
 sub drop_token {
     my ($dbh, $token) = @_;
     sql_exec($dbh, 'delete from tokens where token = ?', $token);
+}
+
+sub oauth_verify_token {
+    my ($query, $params, $dbh) = @_;
+
+    if (uc $params->{grant_type} ne 'AUTHORIZATION_CODE') {
+        return 'bad_request', undef, to_json {
+            error => 'bad_request',
+            error_description => 'invalid grant type',
+        };
+    }
+
+    my ($sth, $count) = sql_exec($dbh, "select UNIX_TIMESTAMP(t.time), c.value, t.state, t.user_id, c.redirect_uri, c.client_secret, c.id " .
+        " from tokens t join oauth_clients c on c.id = t.client_id where t.token = ?", $params->{code});
+    return 'unauthorized', undef, to_json {
+        error => 'access_denied',
+        error_description => 'invalid code',
+    } unless $count;
+
+    my ($time, $client_id, $state, $uid, $redir_uri, $client_secret, $cl_id) = $sth->fetchrow_array();
+
+    drop_token($dbh, $params->{code});
+    if ($time + $global_parametrs{auth_token_expire_time} <= time()) {
+        return 'unauthorized', undef, to_json {
+            error => 'access_denied',
+            error_description => 'token expired'
+        };
+    }
+
+    if (($client_id ne $params->{client_id}) || ($client_secret ne $params->{client_secret})) {
+        return 'unauthorized', undef, to_json {
+            error => 'access_denied',
+            error_description => 'invalid client id'
+        };
+    }
+
+    if ($redir_uri ne $params->{redirect_uri}) {
+        return 'unauthorized', undef, to_json {
+            error => 'access_denied',
+            error_description => 'invalid redirect uri'
+        };
+    }
+
+    my $key = md5_hex("$client_id$params->{code}" . time . rand 100500);
+    my $refresh_key = md5_hex("$params->{code}$client_id" . time . rand 100500);
+    (undef, $count) = sql_exec($dbh, "insert into tokens(type, token, user_id, client_id) " .
+        "values ('access_token', ?, ?, ?), ('refresh_token', ?, ?, ?)", $key, $uid, $cl_id, $refresh_key, $uid, $cl_id);
+
+    return 'err', undef, to_json { error => 'unknown_error', error_description => 'internal error' } unless $count;
+
+    my $response_data = {
+        token_type => 'basic',
+        access_token => $key,
+        expires_in => $global_parametrs{access_token_expire_time},
+        refresh_token => $refresh_key,
+    };
+
+    if ($redir_uri) {
+        $response_data->{redirect_to} = $redir_uri;
+    }
+
+    return 'ok', undef, to_json $response_data;
+}
+
+sub oauth_try_login {
+    my ($query, $params, $dbh) = @_;
+
+    my ($sth, $count) = sql_exec($dbh, "select t.client_id, t.state, c.redirect_uri, UNIX_TIMESTAMP(t.time) " .
+        "from tokens t join oauth_clients c on c.id = t.client_id where t.token = ?", $params->{client_id});
+
+    return 'unauthorized', undef, to_json {
+        error => 'access_denied',
+        error_description => 'invalid auth token'
+    } unless $count;
+
+    my ($client_id, $state, $url, $time) = $sth->fetchrow_array();
+
+    if ($time + $global_parametrs{auth_token_expire_time} <= time()) {
+        drop_token($dbh, $params->{code});
+        return 'unauthorized', undef, to_json {
+            error => 'access_denied',
+            error_description => 'auth token expired'
+        };
+    }
+
+    my $auth_header_data = $query->http('Authorization');
+
+    $auth_header_data =~ s/Basic //i;
+    my $decoded_credentials = decode_base64($auth_header_data);
+
+    $decoded_credentials =~ /([^:]+):(.+)/;
+    my ($user, $pass) = ($1, $2);
+
+    my $uid = real_login($dbh, $user, $pass);
+    return 'unauthorized', undef, to_json {
+        error => 'access_denied',
+        error_description => 'Invalid username or password'
+    } if $uid == -1;
+
+    drop_token($dbh, $params->{client_id});
+
+    my $key = md5_hex("$client_id$params->{client_id}" . time . rand 100500);
+    sql_exec($dbh, "insert into tokens(client_id, state, token, user_id, type) values " .
+        "(?, ?, ?, ?, 'access_token')", $client_id, $state, $key, $uid);
+
+    return 'ok', undef, to_json { redirect_to => "$url?code=$key" };
 }
 
 sub request_oauth_access_token {
@@ -503,13 +633,23 @@ sub refresh_oauth_token {
         return 'unauthorized';
     }
 
-    sql_exec($dbh, "delete from tokens where where user_id = ? and type = 'refresh_token' and cl_id = ?", $uid, $cl_id);
-    my $access_key = md5_hex("$params->{refresh_token}$cl_id" . time . rand 100500);
+    sql_exec($dbh, "delete from tokens where where user_id = ? and client_id = ?", $uid, $cl_id);
+    my $key = md5_hex("$params->{refresh_token}$cl_id" . time . rand 100500);
+    my $refresh_key = md5_hex("$params->{code}$cl_id" . time . rand 100500);
 
-    sql_exec($dbh, "insert into tokens(type, token, user_id, client_id) values ('access_token', ?, ?, ?)",
-        $access_key, $uid, $cl_id);
+    (undef, $count) = sql_exec($dbh, "insert into tokens(type, token, user_id, client_id) " .
+        "values ('access_token', ?, ?, ?), ('refresh_token', ?, ?, ?)", $key, $uid, $cl_id, $refresh_key, $uid, $cl_id);
 
-    return 'ok', undef, to_json { access_token => $access_key };
+    return 'err', undef, to_json { error => 'unknown_error', error_description => 'internal error' } unless $count;
+
+    my $response_data = {
+        token_type => 'basic',
+        access_token => $key,
+        expires_in => $global_parametrs{access_token_expire_time},
+        refresh_token => $refresh_key,
+    };
+
+    return 'ok', undef, to_json $response_data;
 }
 
 sub get_info_about_all_users {
@@ -786,6 +926,8 @@ sub save_yammer_token {
         return 'err';
     }
 
+    my $id = $sth->fetchrow_arrayref()->[0];
+
     my $ua = LWP::UserAgent->new;
     my $response = $ua->get('https://www.yammer.com/oauth2/access_token.json?client_id=lm6kWM4iuMsjdsMVLeUTYg&' .
             "client_secret=HjcePE2pGrUOVgn57ZfD70fo1KcvT03DrCFxVPqYA&code=$params->{code}");
@@ -793,7 +935,6 @@ sub save_yammer_token {
     if ($response->is_success) {
         $response = parse_json($response->decoded_content);
 
-        my $id = $sth->fetchrow_arrayref()->[0];
         sql_exec($dbh, "update yammer_tokens set token = ? where id = ?", $response->{access_token}->{token}, $id);
 
         return 'found', undef, undef, { -location => '/#yammer_data' };
@@ -952,13 +1093,16 @@ sub init {
         my ($status, $data, $ref, $cookie) = ('not_found', undef, undef, undef);
 
         my $env = $request->GetEnvironment();
+        use Data::Dumper;
+        open my $f, '>', '/tmp/stuff';
+        print $f Dumper $env;
 
         if ($ref = $actions{$env->{SCRIPT_NAME}}) {
             my $params = get_request_params $query, $env;
             my $flag = 1;
 
             my $access_token = $query->http('Authorization');
-            if ($access_token =~ /^\s*Bearer\s(\w+)\s*$/i) {
+            if (defined $access_token && $access_token =~ /^\s*Bearer\s(\w+)\s*$/i) {
                 $access_token = $1;
             } else {
                 $access_token = undef;

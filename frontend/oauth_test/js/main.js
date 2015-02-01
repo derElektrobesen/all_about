@@ -11,6 +11,27 @@
     window.request_data = {};
 
     $(document).ready(function () {
+        var code = $.urlParam("code");
+        if (code != null) {
+            $.ajax({
+                method: 'GET',
+                url: 'https://oauth.allabout/verify_token',
+                data: {
+                    grant_type: 'authorization_code',
+                    code: code,
+                    redirect_uri: 'http://test_allabout/request_result',
+                    client_id: 'c4ca4238a0b923820dcc509a6f75849b',
+                    client_secret: 'HjcePE2pGrUOVgn57ZfD70fo1KcvT03DrCFxVPq34YA',
+                },
+                success: function (data) {
+                    if (data['redirect_to']) {
+                        $(location).attr('href', "http://test_allabout/?refresh_token=" + data['refresh_token'] +
+                            '&access_token=' + data['access_token']);
+                    }
+                },
+            });
+        }
+
         var refresh_token = $.urlParam("refresh_token"),
             access_token = $.urlParam("access_token");
         if (refresh_token)
@@ -28,11 +49,12 @@
                 url: 'https://oauth.allabout/refresh_auth_token',
                 data: {
                     refresh_token: window.request_data.refresh_token,
+                    client_secret: 'HjcePE2pGrUOVgn57ZfD70fo1KcvT03DrCFxVPq34YA',
                     grant_type: 'refresh_token',
                 },
                 success: function (data) {
-                    window.request_data.access_token = data.access_token;
-                    alert("Success!");
+                    $(location).attr('href', "http://test_allabout/?refresh_token=" + data['refresh_token'] +
+                        '&access_token=' + data['access_token']);
                 },
             });
         });
@@ -59,20 +81,13 @@
             });
         });
         $("#btn-request_tokens").on("click", function () {
-            $.ajax({
-                method: 'GET',
-                url: 'https://oauth.allabout/request_auth_token',
-                data: {
-                    redirect_uri: "http://test_allabout/request_result",
-                    client_id: 'c4ca4238a0b923820dcc509a6f75849b',
-                    response_type : 'code',
-                },
-                success: function (data) {
-                    if (data['redirect_to']) {
-                        $(location).attr('href', data['redirect_to']);
-                    }
-                },
+            var data = $.param({
+                redirect_uri: "http://test_allabout/request_result",
+                client_id: 'c4ca4238a0b923820dcc509a6f75849b',
+                response_type : 'code',
             });
+
+            $(location).attr('href', 'https://oauth.allabout/request_auth_token?' + data);
         });
     });
 }) ($, Backbone, _);

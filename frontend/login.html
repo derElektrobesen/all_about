@@ -1,0 +1,102 @@
+<html>
+    <script src="//code.jquery.com/jquery-1.11.2.min.js"></script>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap-theme.min.css">
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/js/bootstrap.min.js"></script>
+
+    <script type="text/javascript">
+        $(function () {
+            $.urlParam = function (name) {
+                var results = new RegExp('[\?&]' + name + '=([^&#]*)').exec(window.location.href);
+                if (results == null) {
+                   return null;
+                } else {
+                   return results[1] || 0;
+                }
+            };
+            var $form = $('#form');
+            $form.on('submit', 'form', function () {
+                var $passw = $form.find("#edt_passw"),
+                    $login = $form.find("#edt_login"),
+                    login = $login.val(),
+                    passw = $passw.val(),
+                    class_name = "has-error",
+                    $err = $form.find("#login-error_message"),
+                    callback = function (data) {
+                        $passw.val('');
+                        var msg = "Unknown error";
+                        if (data && data.responseJSON && data.responseJSON.error_description)
+                            msg = data.responseJSON.error_description;
+                        $err.html("<strong>Error!</strong>&nbsp;" + msg).removeClass("hide");
+                    };
+
+                $err.addClass('hide');
+                var data = $.param({ client_id: "%s", grant_type: 'password' });
+                var req = {
+                    dataType:   'json',
+                    error:      callback,
+                    statusCode: {
+                        404:    callback,
+                        400:    callback,
+                    },
+                    xhrFields: {
+                        withCredentials: true
+                    },
+                    url:        'https://oauth.allabout/oauth_login?' + data,
+                    method:     'GET',
+                    headers: {
+                        'Authorization': 'Basic ' + btoa(login + ':' + passw),
+                    },
+                    success: function (data) {
+                        if (data['redirect_to']) {
+                            $(location).attr('href', data['redirect_to']);
+                        }
+                    },
+                };
+                console.log(req);
+                $.ajax(req);
+                return false;
+            });
+        });
+    </script>
+
+    <body>
+        <div class="col-md-6 col-md-offset-3" id='form'>
+            <form class="form-horizontal">
+            <fieldset>
+
+            <!-- Form Name -->
+            <legend>Login</legend>
+
+            <div class="alert alert-warning hide" id="login-error_message">
+                <strong>Error!</strong> Incorrect login or password given.
+            </div>
+
+            <!-- Text input-->
+            <div class="form-group">
+              <label class="col-md-4 control-label" for="edt_login">Login</label>
+              <div class="col-md-4">
+              <input id="edt_login" name="edt_login" type="text" placeholder="Input login" class="form-control input-md" required="" autofocus>
+              </div>
+            </div>
+
+            <!-- Password input-->
+            <div class="form-group">
+              <label class="col-md-4 control-label" for="edt_passw">Password</label>
+              <div class="col-md-4">
+                <input id="edt_passw" name="edt_passw" type="password" placeholder="Input password" class="form-control input-md" required="">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <div class="col-md-1 col-md-offset-7">
+                <button id="btn_login" name="btn_login" class="btn btn-default pull-right">Sign in</button>
+              </div>
+            </div>
+
+            </fieldset>
+            </form>
+            <div class="pre-footer"></div>
+        </div>
+    </body>
+</html>
