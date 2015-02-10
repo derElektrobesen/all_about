@@ -1,6 +1,7 @@
 (function ($, Backbone, _, Template) {
 
     var user_info_model_ptr = undefined;
+    var messages_model_ptr = undefined;
 
     var Login = {
         Model: Template.Model.extend({}),
@@ -272,7 +273,6 @@
                     },
                     error:          function () {
                         var dummy = _.random();
-                        console.log(dummy);
                         self.set({ logged_in: false, dummy: dummy });
                         window.Forms.ShowTabs(false);
                     },
@@ -310,9 +310,14 @@
                         $(".login_tab").show();
                         $(".logged_in").hide();
                         window.app.navigate("#", true);
-                        user_info_model_ptr.set({
-                            logged_in:          false,
-                        });
+                        if (user_info_model_ptr)
+                            user_info_model_ptr.set({
+                                logged_in:          false,
+                            });
+                        if (messages_model_ptr)
+                            messages_model_ptr.set({
+                                logged_in:          false,
+                            });
                     },
                 });
             },
@@ -353,7 +358,7 @@
 
         View: Template.View.extend({
             init: function () {
-                this.$el.on('click', '#btn_logout', this.logout);
+                this.$el.on('click', '#btn_logout', this, this.logout);
             },
 
             render: function () {
@@ -368,15 +373,14 @@
                 this.render();
             },
 
-            logout: function () {
-                var self = this;
+            logout: function (event) {
                 $.ajax({
                     url:            '/cgi-bin/logout.cgi',
                     success:        function () {
                         $(".login_tab").show();
                         $(".logged_in").hide();
                         window.app.navigate("#", true);
-                        self.model.set({
+                        event.data.model.set({
                             logged_in:          false,
                         });
                     },
@@ -397,6 +401,7 @@
             initialize: function () {
                 this._logged_in = false;
                 this._messages_loaded = false;
+                messages_model_ptr = this;
             },
 
             load_messages: function (callback, cur_user) {
@@ -406,11 +411,12 @@
                     url:            '/cgi-bin/check_messages.cgi',
                     success:        function (data) {
                         self._logged_in = true;
-                        self.set({ messages: data.data, users: data.users, current_user: cur_user });
+                        self.set({ messages: data.data, users: data.users, current_user: cur_user, logged_in: true });
                         if (callback)
                             callback(true);
                     },
                     error:          function () {
+                        self.set({ logged_in: false, messages: undefined, users: undefined, cur_user: undefined });
                         if (callback)
                             callback(false);
                     },
@@ -418,11 +424,10 @@
             },
 
             is_logged_in: function (callback) {
-                var self = this;
-                if (!this._messages_loaded)
+                if (this.get("logged_in") && !this._messages_loaded)
                     this.load_messages(callback);
                 else if (callback)
-                    callback(this._logged_in);
+                    callback(this._logged_in && this.get("logged_in"));
                 return this._logged_in;
             },
 
