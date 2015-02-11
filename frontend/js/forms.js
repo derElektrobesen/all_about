@@ -238,7 +238,6 @@
                 name:               undefined,
                 surname:            undefined,
                 lastname:           undefined,
-                dummy:              0,
             },
 
             setUser: function (usrname) {
@@ -272,8 +271,8 @@
                         window.Forms.ShowTabs(true);
                     },
                     error:          function () {
-                        var dummy = _.random();
-                        self.set({ logged_in: false, dummy: dummy });
+                        self.set({ logged_in: true }, { silent: true });
+                        self.set({ logged_in: false });
                         window.Forms.ShowTabs(false);
                     },
                 });
@@ -300,6 +299,10 @@
 
             show: function () {
                 this.render();
+            },
+
+            hide: function () {
+                this.$el.addClass("hide");
             },
 
             logout: function () {
@@ -372,7 +375,8 @@
                     logged_in:      this.model.get('logged_in'),
                     data:           this.model.get('data'),
                 }));
-                this.$el.removeClass('hide');
+                if (window.location.href.match(/#about$/))
+                    this.$el.removeClass('hide');
             },
 
             show: function () {
