@@ -4,9 +4,9 @@
 <fieldset>
 
 <legend>Messages</legend>
-<br>
-
-<% if (logged_in) {
+<% if (logged_in) { %>
+    <br>
+<%
     var mk_href = function (usr) { return '<a href="#about_' + usr + '">' + usr + "</a>"; };
     messages.map(function (message) { %>
 
@@ -50,6 +50,9 @@
             </span>
         </div>
 <br><br>
+<% } else { %>
+    <h2>Need to <a href="#login">login</a></h2>
+    <div class="pre-footer"></div>
 <% } %>
 </fieldset>
 </form>

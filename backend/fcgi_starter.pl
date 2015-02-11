@@ -186,7 +186,6 @@ my %actions = (
     '/cgi-bin/get_users_info.cgi'    => {
         sub_ref         => \&get_info_about_all_users,
         content_type    => 'json',
-        need_login      => 1,
     },
     '/cgi-bin/get_user_info.cgi'    => {
         sub_ref         => \&get_info_about_user,
@@ -658,7 +657,7 @@ sub get_info_about_all_users {
     my ($sth, $count) = sql_exec($dbh, 'select u.id, u.username, ui.name, ui.surname, ui.lastname, ui.email ' .
             'from users u join users_info ui on u.id = ui.user_id order by u.username');
 
-    my $data = {};
+    my $data = { logged_in => defined $params->{'-uid'} ? 1 : 0 };
 
     if (!$count) {
         $data = { error => 'No users found' };
@@ -666,9 +665,11 @@ sub get_info_about_all_users {
 
     while (my ($uid, $username, $name, $surname, $lastname, $email) = $sth->fetchrow_array()) {
         my %me = ();
-        $me{me} = 1 if $uid == $params->{'-uid'};
-        push @{$data->{data}}, { username => $username, name => $name,
-            surname => $surname, lastname => $lastname, email => $email, %me };
+        if (defined $params->{'-uid'}) {
+            %me = ( surname => $surname, lastname => $lastname, email => $email, );
+            $me{me} = 1 if $uid == $params->{'-uid'};
+        }
+        push @{$data->{data}}, { username => $username, name => $name, %me };
     }
 
     return 'ok', undef, to_json $data;
@@ -1142,14 +1143,15 @@ sub init {
                 }
             }
 
+            my %r = check_session($query, $dbh);
+            $params->{'-uid'} = $r{uid};
+
             if (!$access_granted && $flag && $ref->{need_login}) {
-                my %r = check_session($query, $dbh);
                 if ($r{expired}) {
                     $status = "unauthorized";
                     $flag = 0;
                     $cookie = create_session_cookie; # This will delete cookie
-                } else {
-                    $params->{'-uid'} = $r{uid};
+                    delete $params->{'-uid'};
                 }
             }
 

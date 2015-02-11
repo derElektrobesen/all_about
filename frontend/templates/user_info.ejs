@@ -3,7 +3,7 @@
 <fieldset>
 
 <legend>All users informaition</legend>
-<% if (logged_in) {
+<%    var capitalise = function (string) { return string.charAt(0).toUpperCase() + string.slice(1); };
       if (data.data) { %>
 
         <div class="table-responsive">
@@ -14,10 +14,11 @@
             <tr><td>Login:</td><td>
                 <a href="#about_<%= user.username %>"><%= user.username %>
                     <% if (user.me) { %>&nbsp;<b>(Me)</b> <% } %> </a></td></tr>
-            <tr><td>Email:</td><td><%= user.email %></td></tr>
-            <tr><td>Name:</td><td><%= user.name %></td></tr>
-            <tr><td>Surname:</td><td><%= user.surname %></td></tr>
-            <tr><td>Lastname:</td><td><%= user.lastname %></td></tr>
+            <% [ 'email', 'name', 'surname', 'lastname' ].forEach(function(field) {
+                if (user[field]) { %>
+                    <tr><td><%= capitalise(field) %>:</td><td><%= user[field] %></td></tr>
+                <% }
+            }); %>
             <tr><td></td><td></td></tr>
 
         <% }); %>
@@ -29,11 +30,8 @@
         <div class="alert alert-danger" role="alert"> <strong>Error!</strong> <%= data.error ? data.error : "Unknown error" %> </div>
     <% } %>
 
+<% if (logged_in) { %>
     <button type="button" class="btn btn-default btn-sm pull-right" id='btn_logout'>Logout</button><br>
-<% } else { %>
-
-<h2>Need to <a href="#login">login</a></h2>
-
 <% } %>
 
 <div class="pre-footer"></div>

@@ -341,10 +341,16 @@
                 $.ajax({
                     url: '/cgi-bin/get_users_info.cgi',
                     success: function (data) {
-                        self.set({ logged_in: true, data: data });
-                        window.Forms.ShowTabs(true);
-                        if (make_redirect)
-                            window.app.navigate("#about", true);
+                        self.set({ logged_in: data.logged_in, data: data });
+                        if (data.logged_in) {
+                            window.Forms.ShowTabs(true);
+                            if (make_redirect)
+                                window.app.navigate("#about", true);
+                        } else {
+                            window.Forms.ShowTabs(false);
+                            if (make_redirect)
+                                window.app.navigate("#about", true);
+                        }
                     },
                     error: function () {
                         self.set({ logged_in: false, data: undefined });
@@ -457,10 +463,7 @@
                 var $el = this.$el,
                     self = this;
                 this.model.is_logged_in(function (logged_in) {
-                    if (logged_in)
-                        $el.removeClass("hide");
-                    else
-                        $el.addClass("hide");
+                    $el.removeClass("hide");
                     $el.html(self.template({
                         logged_in:      logged_in,
                         messages:       self.model.get("messages"),
