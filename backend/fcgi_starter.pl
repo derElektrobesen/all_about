@@ -654,21 +654,22 @@ sub refresh_oauth_token {
 sub get_info_about_all_users {
     my ($query, $params, $dbh) = @_;
 
-    my ($start, $count) = (0, 2);
+    my ($start, $count, $page) = (0, 2, $params->{page});
     if ($params->{page}) {
         $start = ($params->{page} - 1) * $count;
     }
     if (defined $params->{all}) {
         $count = 999999999999;
         $start = 0;
+        $page = undef;
     }
 
     my ($sth, $rows_count) = sql_exec($dbh, 'select u.id, u.username, ui.name, ui.surname, ui.lastname, ui.email ' .
             'from users u join users_info ui on u.id = ui.user_id order by u.username limit ? offset ?', $count, $start);
 
-    $count = $rows_count if $params->{all};
+    $count = $rows_count if defined $params->{all};
 
-    my $data = { logged_in => defined $params->{'-uid'} ? 1 : 0, count => 2, page => $params->{page} || 1 };
+    my $data = { logged_in => defined $params->{'-uid'} ? 1 : 0, count => $count, page => $page || 1 };
 
     if (!$rows_count) {
         $data = { error => 'No users found' };
