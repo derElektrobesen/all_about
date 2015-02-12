@@ -342,7 +342,7 @@
             request_data: function (make_redirect) {
                 var self = this;
                 $.ajax({
-                    url: '/cgi-bin/get_users_info.cgi',
+                    url: '/cgi-bin/get_users_info.cgi?all=1',
                     success: function (data) {
                         self.set({ logged_in: data.logged_in, data: data });
                         if (data.logged_in) {
