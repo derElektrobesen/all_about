@@ -389,10 +389,8 @@
                     success:        function () {
                         $(".login_tab").show();
                         $(".logged_in").hide();
+                        event.data.model.request_data(false);
                         window.app.navigate("#", true);
-                        event.data.model.set({
-                            logged_in:          false,
-                        });
                     },
                 });
             },

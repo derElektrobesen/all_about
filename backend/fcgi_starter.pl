@@ -1135,16 +1135,18 @@ sub init {
             }
 
             my $access_granted = 0;
+            my %r;
+
             if ($flag && $access_token) {
                 my $r = check_access_token($dbh, $access_token);
                 if ($r) {
                     $access_granted = 1;
                     $params->{'-uid'} = $r->{uid};
                 }
+            } else {
+                %r = check_session($query, $dbh);
+                $params->{'-uid'} = $r{uid};
             }
-
-            my %r = check_session($query, $dbh);
-            $params->{'-uid'} = $r{uid};
 
             if (!$access_granted && $flag && $ref->{need_login}) {
                 if ($r{expired}) {
