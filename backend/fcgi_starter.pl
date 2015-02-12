@@ -1154,6 +1154,8 @@ sub init {
                 if ($r) {
                     $access_granted = 1;
                     $params->{'-uid'} = $r->{uid};
+                } else {
+                    $r{expired} = 1;
                 }
             } else {
                 %r = check_session($query, $dbh);
