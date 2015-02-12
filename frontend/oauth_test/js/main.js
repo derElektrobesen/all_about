@@ -49,7 +49,6 @@
                 url: 'https://oauth.allabout/refresh_auth_token',
                 data: {
                     refresh_token: window.request_data.refresh_token,
-                    client_secret: 'HjcePE2pGrUOVgn57ZfD70fo1KcvT03DrCFxVPq34YA',
                     grant_type: 'refresh_token',
                 },
                 success: function (data) {

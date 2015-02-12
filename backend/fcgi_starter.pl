@@ -231,7 +231,7 @@ my %actions = (
     '/cgi-bin/oauth_refresh_auth_token.cgi' => {
         sub_ref         => \&refresh_oauth_token,
         content_type    => 'json',
-        required_fields => [qw( grant_type refresh_token client_secret )],
+        required_fields => [qw( grant_type refresh_token )],
     },
     '/cgi-bin/yammer_auth.cgi' => {
         sub_ref         => \&yammer_auth,
@@ -634,7 +634,7 @@ sub refresh_oauth_token {
 
     sql_exec($dbh, "delete from tokens where where user_id = ? and client_id = ?", $uid, $cl_id);
     my $key = md5_hex("$params->{refresh_token}$cl_id" . time . rand 100500);
-    my $refresh_key = md5_hex("$params->{code}$cl_id" . time . rand 100500);
+    my $refresh_key = md5_hex("$cl_id" . time . rand 100500);
 
     (undef, $count) = sql_exec($dbh, "insert into tokens(type, token, user_id, client_id) " .
         "values ('access_token', ?, ?, ?), ('refresh_token', ?, ?, ?)", $key, $uid, $cl_id, $refresh_key, $uid, $cl_id);
